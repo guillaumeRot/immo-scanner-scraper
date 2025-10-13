@@ -9,6 +9,19 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Scraper API en ligne 🚀' });
 });
 
+app.get('/run-scrapers', (req, res) => {
+    console.log(`📩 [Handler] Appel reçu !`);
+    try {
+        // await initDb();
+        // await immonotScraper();
+        // await closeDb();
+        res.json({ status: "success", message: "Scraping terminé." });
+    } catch (e) {
+        console.error("❌ Erreur dans /run-scrapers:", e);
+        res.json({ status: "error", message: e.message });
+    }
+  });
+
 app.post('/screenshot', async (req, res) => {
   const url = req.body.url || 'https://news.ycombinator.com';
   const finalUrl = url.startsWith('http') ? url : `https://${url}`;
