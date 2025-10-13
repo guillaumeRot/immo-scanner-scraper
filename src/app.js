@@ -1,5 +1,7 @@
+import 'dotenv/config';
 import express from 'express';
 import { chromium } from 'playwright';
+import { closeDb, initDb } from './db.js';
 
 const app = express();
 
@@ -9,18 +11,21 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Scraper API en ligne 🚀' });
 });
 
-app.get('/run-scrapers', (req, res) => {
+app.get('/run-scrapers', async (req, res) => {
     console.log(`📩 [Handler] Appel reçu !`);
     try {
-        // await initDb();
-        // await immonotScraper();
-        // await closeDb();
-        res.json({ status: "success", message: "Scraping terminé." });
+      await initDb();
+      // ton code de scraping ici, par ex. :
+      // await immonotScraper();
+      await closeDb();
+  
+      res.json({ status: "success", message: "Scraping terminé." });
     } catch (e) {
-        console.error("❌ Erreur dans /run-scrapers:", e);
-        res.json({ status: "error", message: e.message });
+      console.error("❌ Erreur dans /run-scrapers:", e);
+      res.json({ status: "error", message: e.message });
     }
   });
+  
 
 app.post('/screenshot', async (req, res) => {
   const url = req.body.url || 'https://news.ycombinator.com';

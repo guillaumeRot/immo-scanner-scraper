@@ -15,6 +15,11 @@
     "base64-js": "^1.5.1",
     "body-parser": "^1.20.3",
     "express": "^4.21.2",
-    "playwright": "^1.50.1"
+    "pg": "^8.11.0",
+    "playwright": "^1.50.1",
+    "dotenv": "^17.2.2"
+  },
+  "devDependencies": {
+    "@types/pg": "^8.15.5"
   }
 }
