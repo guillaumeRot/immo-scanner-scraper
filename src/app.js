@@ -1,97 +1,55 @@
-const express = require('express');
+import express from 'express';
+import { chromium } from 'playwright';
+
 const app = express();
-// Import Playwright's Chromium browser
-const { chromium } = require('playwright');
-const bodyParser = require('body-parser');
-const base64 = require('base64-js');
 
-// Set EJS as the template engine
-app.set('view engine', 'ejs');
-// Set the directory for views
-app.set('views', __dirname + '/views');
+app.use(express.json());
 
-// Use body-parser to parse form data
-app.use(bodyParser.urlencoded({ extended: true }));
-
-// Handle GET requests and render the initial page
 app.get('/', (req, res) => {
-    res.render('success', {
-        url: 'https://news.ycombinator.com',
-        screenshot_base64: '',
-        links: [],
-        page_title: null
+  res.json({ status: 'ok', message: 'Scraper API en ligne 🚀' });
+});
+
+app.post('/screenshot', async (req, res) => {
+  const url = req.body.url || 'https://news.ycombinator.com';
+  const finalUrl = url.startsWith('http') ? url : `https://${url}`;
+
+  let browser;
+  try {
+    browser = await chromium.launch({
+      headless: true,
+      args: [
+        '--no-sandbox',
+        '--disable-setuid-sandbox',
+        '--disable-dev-shm-usage',
+        '--single-process',
+      ],
     });
+
+    const page = await browser.newPage();
+    await page.goto(finalUrl, { timeout: 30000 });
+    const screenshot = await page.screenshot({ encoding: 'base64' });
+    const pageTitle = await page.title();
+
+    const links = await page.$$eval('a', as =>
+      as.map(a => ({
+        href: a.href,
+        text: a.textContent.trim(),
+      }))
+    );
+
+    res.json({
+      success: true,
+      url: finalUrl,
+      title: pageTitle,
+      screenshot_base64: screenshot,
+      links,
+    });
+  } catch (e) {
+    res.status(500).json({ success: false, error: e.message });
+  } finally {
+    if (browser) await browser.close();
+  }
 });
 
-// Handle POST requests to take a screenshot
-app.post('/', async (req, res) => {
-    // Get the URL from the form, default to Hacker News
-    let url = req.body.url || 'https://news.ycombinator.com';
-    // Add 'https://' if the URL doesn't start with 'http'
-    if (!url.startsWith('http')) {
-        url = 'https://' + url;
-    }
-
-    let browser;
-    try {
-        // Launch the Chromium browser with specific arguments
-        browser = await chromium.launch({
-            headless: true,
-            args: [
-                '--single-process',
-                '--no-sandbox',
-                '--disable-setuid-sandbox',
-            ],
-        });
-        // Create a new browser page
-        const page = await browser.newPage();
-        // Navigate to the specified URL
-        await page.goto(url);
-        // Take a screenshot of the page
-        const screenshot = await page.screenshot();
-        // Get the page title
-        const page_title = await page.title();
-
-        // Extract all <a> tags' links and text content
-        const links_and_texts = await page.evaluate(() => {
-            const anchors = document.querySelectorAll('a');
-            return Array.from(anchors).map(anchor => {
-                const text = anchor.textContent.replace(/<[^>]*>/g, '').trim();
-                return {
-                    href: anchor.href,
-                    text: text
-                };
-            });
-        });
-
-        // Convert the screenshot to a base64 string
-        const screenshot_base64 = base64.fromByteArray(screenshot);
-
-        // Render the success page with relevant data
-        res.render('success', {
-            url,
-            page_title,
-            screenshot_base64,
-            links: links_and_texts
-        });
-    } catch (e) {
-        // Close the browser if an error occurs
-        if (browser) {
-            await browser.close();
-        }
-        // Render the error page with the error message
-        res.render('error', { error_message: e.message });
-    } finally {
-        // Ensure the browser is closed after all operations
-        if (browser) {
-            await browser.close();
-        }
-    }
-});
-
-// Set the port, use environment variable PORT or default to 8080
 const port = process.env.PORT || 8080;
-// Start the server
-app.listen(port, () => {
-    console.log(`Server is running on port ${port}`);
-});
+app.listen(port, () => console.log(`✅ API active sur port ${port}`));
