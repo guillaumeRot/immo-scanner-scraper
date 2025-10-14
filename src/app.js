@@ -23,10 +23,10 @@ async function runScrapersSequentially() {
     isScrapeRunning = true;
     try {
         console.log(`🚀 [Handler] Dans try`);
-        initDb();
-        immonotScraper();
-        kermarrecScraper();
-        closeDb();
+        await initDb();
+        await immonotScraper();
+        await kermarrecScraper();
+        await closeDb();
     } catch (err) {
       console.error("Erreur lors de l'exécution des scrapers:", err);
     } finally {
@@ -44,8 +44,8 @@ app.get('/run-scrapers', async (req, res) => {
     }
 
     try {
-        setImmediate(() => {
-            runScrapersSequentially();
+        setImmediate(async () => {
+            await runScrapersSequentially();
         });
   
       res.json({ status: "started", message: "Scrapers démarrés en arrière-plan (séquentiel)." });
