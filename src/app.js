@@ -23,10 +23,10 @@ async function runScrapersSequentially() {
     isScrapeRunning = true;
     try {
         console.log(`🚀 [Handler] Dans try`);
-        await initDb();
-        await immonotScraper();
-        await kermarrecScraper();
-        await closeDb();
+        initDb();
+        immonotScraper();
+        kermarrecScraper();
+        closeDb();
     } catch (err) {
       console.error("Erreur lors de l'exécution des scrapers:", err);
     } finally {
