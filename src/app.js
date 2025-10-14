@@ -2,6 +2,7 @@ import 'dotenv/config';
 import express from 'express';
 import { chromium } from 'playwright';
 import { closeDb, initDb } from './db.js';
+import { immonotScraper } from './sites/immonot.js';
 
 const app = express();
 
@@ -15,8 +16,7 @@ app.get('/run-scrapers', async (req, res) => {
     console.log(`📩 [Handler] Appel reçu !`);
     try {
       await initDb();
-      // ton code de scraping ici, par ex. :
-      // await immonotScraper();
+      await immonotScraper();
       await closeDb();
   
       res.json({ status: "success", message: "Scraping terminé." });
