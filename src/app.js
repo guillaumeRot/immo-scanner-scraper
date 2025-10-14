@@ -15,6 +15,7 @@ app.get('/', (req, res) => {
 });
 
 async function runScrapersSequentially() {
+    console.log(`🚀 [Handler] Dans runScrapersSequentially`);
     if (isScrapeRunning) return;
     isScrapeRunning = true;
     try {
@@ -39,9 +40,11 @@ app.get('/run-scrapers', async (req, res) => {
     }
 
     try {
-      setImmediate(() => {
-        runScrapersSequentially();
-      });
+        console.log(`🚀 [Handler] Scrapers démarrés en arrière-plan (séquentiel).`);
+        setImmediate(() => {
+            console.log(`🚀 [Handler] Dans setImmediate`);
+            runScrapersSequentially();
+        });
   
       res.json({ status: "started", message: "Scrapers démarrés en arrière-plan (séquentiel)." });
     } catch (e) {
