@@ -44,9 +44,13 @@ app.get('/run-scrapers', async (req, res) => {
     }
 
     try {
-        setImmediate(async () => {
-            await runScrapersSequentially();
-        });
+        // setImmediate(async () => {
+        //     await runScrapersSequentially();
+        // });
+        await initDb();
+        await immonotScraper();
+        await kermarrecScraper();
+        await closeDb();
   
       res.json({ status: "started", message: "Scrapers démarrés en arrière-plan (séquentiel)." });
     } catch (e) {
