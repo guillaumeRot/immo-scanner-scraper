@@ -3,7 +3,7 @@ import { chromium } from "playwright";
 import { deleteMissingAnnonces, insertAnnonce } from "../db.js";
 
 export const immonotScraper = async () => {
-  const requestQueue = await RequestQueue.open();
+  const requestQueue = await RequestQueue.open(`immonot-${Date.now()}`);
 
   // On démarre par la première page des annonces
   await requestQueue.addRequest({
@@ -18,7 +18,6 @@ export const immonotScraper = async () => {
     maxConcurrency: 1, // équilibre vitesse / RAM
     requestHandlerTimeoutSecs: 180,
     navigationTimeoutSecs: 30,
-
     launchContext: {
       launcher: chromium,
       launchOptions: {
@@ -39,7 +38,7 @@ export const immonotScraper = async () => {
 
       // 🧭 Étape 1 — Pages de liste
       if (label === "LIST_PAGE") {
-        log.info(`🔎 Page de liste : ${request.url}`);
+        log.info(`🔎 Immonot - Page de liste : ${request.url}`);
 
         await page.goto(request.url);
         await page.waitForLoadState("networkidle", { timeout: 60000 });
@@ -55,7 +54,7 @@ export const immonotScraper = async () => {
         if (request.url === "https://www.immonot.com/immobilier.do") {
           try {
 
-            log.info("⚙️  Application des filtres Immonot...");
+            log.info("⚙️  Immonot - Application des filtres Immonot...");
 
             // Zone de recherche
             await page.waitForTimeout(6000);
@@ -119,10 +118,10 @@ export const immonotScraper = async () => {
             // Lancer la recherche
             await page.locator('button.il-search-btn.js-search-update').click();
             // await page.waitForLoadState("networkidle", { timeout: 60000 });
-            log.info("✅ Filtres appliqués et résultats chargés.");
+            log.info("✅ Immonot - Filtres appliqués et résultats chargés.");
 
           } catch (e) {
-            log.warning("⚠️ Erreur lors de l'application des filtres", { error: String(e) });
+            log.warning("⚠️ Immonot - Erreur lors de l'application des filtres", { error: String(e) });
           }
         }
 
@@ -132,10 +131,10 @@ export const immonotScraper = async () => {
         );
 
         for(var link of links){
-          console.log("Ajout dans la queue du lien : ", link) 
+          log.info("Immonot - Ajout dans la queue du lien : ", link) 
         }
 
-        log.info(`📌 ${links.length} annonces trouvées sur cette page.`);
+        log.info(`📌 Immonot - ${links.length} annonces trouvées sur cette page.`);
 
         // Ajoute chaque lien dans la file pour traitement détail
         for (const url of links) {
@@ -148,17 +147,17 @@ export const immonotScraper = async () => {
           .catch(() => null);
 
         if (nextUrl) {
-          log.info("➡️ Page suivante détectée, ajout dans la file...");
+          log.info("➡️ Immonot - Page suivante détectée, ajout dans la file...");
           await requestQueue.addRequest({ url: nextUrl, userData: { label: "LIST_PAGE" } });
         } else {
-          log.info("✅ Fin de la pagination détectée.");
+          log.info("✅ Immonot - Fin de la pagination détectée.");
         }
       }
 
       // 🏡 Étape 2 — Pages de détail
       if (label === "DETAIL_PAGE") {
         try {
-          log.info(`📄 Page détail : ${request.url}`);
+          log.info(`📄 Immonot - Page détail : ${request.url}`);
 
           await page.goto(request.url, { waitUntil: "domcontentloaded", timeout: 15000 });
 
@@ -189,18 +188,18 @@ export const immonotScraper = async () => {
             });
 
             liensActuels.push(request.url);
-            log.info(`✅ Annonce insérée : ${request.url}`);
+            log.info(`✅ Immonot - Annonce insérée : ${request.url}`);
           } else {
-            log.warning(`⚠️ Données incomplètes pour ${request.url}`);
+            log.warning(`⚠️ Immonot - Données incomplètes pour ${request.url}`);
           }
         } catch (err) {
-          log.error(`❌ Erreur sur la page ${request.url}`, { error: String(err) });
+          log.error(`❌ Immonot - Erreur sur la page ${request.url}`, { error: String(err) });
         }
       }
     },
 
     failedRequestHandler({ request, log }) {
-      log.error(`🚨 Échec permanent pour ${request.url}`);
+      log.error(`🚨 Immonot - Échec permanent pour ${request.url}`);
     },
   });
 
@@ -209,5 +208,5 @@ export const immonotScraper = async () => {
   // Nettoyer les annonces manquantes
   await deleteMissingAnnonces("Immonot", Array.from(new Set(liensActuels)));
 
-  console.log("✅ Scraping Immonot terminé !");
+  console.log("✅ Immonot - Scraping Immonot terminé !");
 };
