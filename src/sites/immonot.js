@@ -1,6 +1,9 @@
-import { PlaywrightCrawler, RequestQueue } from "crawlee";
+import { Configuration, PlaywrightCrawler, RequestQueue } from "crawlee";
 import { chromium } from "playwright";
 import { deleteMissingAnnonces, insertAnnonce } from "../db.js";
+
+Configuration.set('storageDir', '/tmp/crawlee');
+console.log("📂 Crawlee storage configuré sur /tmp/crawlee");
 
 export const immonotScraper = async () => {
   const requestQueue = await RequestQueue.open();
