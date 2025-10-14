@@ -16,9 +16,13 @@ app.get('/', (req, res) => {
 
 async function runScrapersSequentially() {
     console.log(`🚀 [Handler] Dans runScrapersSequentially`);
-    if (isScrapeRunning) return;
+    if (isScrapeRunning) {
+        console.log(`🚀 [Handler] Scrapers déjà en cours.`);
+        return;
+    }
     isScrapeRunning = true;
     try {
+        console.log(`🚀 [Handler] Dans try`);
         await initDb();
         await immonotScraper();
         await kermarrecScraper();
@@ -40,9 +44,7 @@ app.get('/run-scrapers', async (req, res) => {
     }
 
     try {
-        console.log(`🚀 [Handler] Scrapers démarrés en arrière-plan (séquentiel).`);
         setImmediate(() => {
-            console.log(`🚀 [Handler] Dans setImmediate`);
             runScrapersSequentially();
         });
   
