@@ -121,7 +121,8 @@ export const immonotScraper = async () => {
             log.info("✅ Immonot - Filtres appliqués et résultats chargés.");
 
           } catch (e) {
-            log.warning("⚠️ Immonot - Erreur lors de l'application des filtres", { error: String(e) });
+            log.error("❌ Immonot - Erreur lors du chargement des résultats avec filtres", { error: String(e) });
+            await insertErreur("Immonot", request.url, String(e));
           }
         }
 
@@ -194,6 +195,7 @@ export const immonotScraper = async () => {
           }
         } catch (err) {
           log.error(`❌ Immonot - Erreur sur la page ${request.url}`, { error: String(err) });
+          await insertErreur("Immonot", request.url, String(err));
         }
       }
     },

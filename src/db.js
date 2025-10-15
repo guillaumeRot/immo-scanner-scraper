@@ -21,14 +21,14 @@ export async function initDb() {
     client = await pool.connect();
     console.log("✅ Connexion à la base de données PostgreSQL établie");
 
-    await ensureTableExists();
+    await ensureTablesExists();
   } catch (err) {
     console.error("❌ Erreur de connexion à la base de données:", err);
     throw err;
   }
 }
 
-async function ensureTableExists() {
+async function ensureTablesExists() {
   if (!client) throw new Error("Client non initialisé");
 
   const createTableQuery = `
@@ -51,23 +51,26 @@ async function ensureTableExists() {
     CREATE INDEX IF NOT EXISTS idx_annonce_agence ON "Annonce"(agence);
   `;
 
+  const createErrorTableQuery = `
+    CREATE TABLE IF NOT EXISTS "Erreur" (
+      id SERIAL PRIMARY KEY,
+      scraper VARCHAR(100) NOT NULL,
+      url TEXT NOT NULL,
+      message TEXT NOT NULL,
+      date_erreur TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_erreur_scraper ON "Erreur"(scraper);
+    CREATE INDEX IF NOT EXISTS idx_erreur_date ON "Erreur"(date_erreur);
+  `;
+
   await client.query(createTableQuery);
   console.log("✅ Table 'Annonce' vérifiée/créée");
+
+  await client.query(createErrorTableQuery);
+  console.log("✅ Table 'Erreur' vérifiée/créée");
 }
 
-/**
- * Insère ou met à jour une annonce.
- * @param {Object} annonce
- * @param {string=} annonce.type
- * @param {string=} annonce.prix
- * @param {string=} annonce.ville
- * @param {string=} annonce.pieces
- * @param {string=} annonce.surface
- * @param {string=} annonce.lien
- * @param {string} annonce.agence
- * @param {string=} annonce.description
- * @param {string[]=} annonce.photos
- */
 export async function insertAnnonce(annonce) {
   if (!client) throw new Error("Client non initialisé");
   if (!annonce.lien) {
@@ -107,6 +110,24 @@ export async function insertAnnonce(annonce) {
     await client.query(upsertQuery, values);
   } catch (err) {
     console.error("Erreur insertion annonce (pg):", err);
+  }
+}
+
+export async function insertErreur(scraper, url, message) {
+  if (!client) throw new Error("Client non initialisé");
+
+  try {
+    const insertQuery = `
+      INSERT INTO "Erreur" (scraper, url, message, date_erreur)
+      VALUES ($1, $2, $3, NOW());
+    `;
+
+    const values = [scraper, url, message];
+    await client.query(insertQuery, values);
+
+    console.log(`⚠️ Erreur enregistrée pour ${scraper}: ${message}`);
+  } catch (err) {
+    console.error("Erreur lors de l'insertion dans la table Erreur:", err);
   }
 }
 

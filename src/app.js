@@ -14,28 +14,11 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Scraper API en ligne 🚀' });
 });
 
-async function runScrapersSequentially() {
-    console.log(`🚀 [Handler] Dans runScrapersSequentially`);
-    if (isScrapeRunning) {
-        console.log(`🚀 [Handler] Scrapers déjà en cours.`);
-        return;
-    }
-    isScrapeRunning = true;
-    try {
-        console.log(`🚀 [Handler] Dans try`);
-        await initDb();
-        await immonotScraper();
-        await kermarrecScraper();
-        await closeDb();
-    } catch (err) {
-      console.error("Erreur lors de l'exécution des scrapers:", err);
-    } finally {
-      isScrapeRunning = false;
-    }
-  }
-
 app.get('/run-scrapers', async (req, res) => {
-    console.log(`📩 [Handler] Appel reçu !`);
+    // Récupération du paramètre de l’URL, ex: /run-scrapers?scraper=immonot
+    const { scraper } = req.query;
+
+    console.log(`📩 [Handler] Appel reçu pour le scraper ${scraper}!`);
     if (isScrapeRunning) {
         return res.status(409).json({
           status: "already_running",
@@ -44,20 +27,29 @@ app.get('/run-scrapers', async (req, res) => {
     }
 
     try {
-        // setImmediate(async () => {
-        //     await runScrapersSequentially();
-        // });
-        await initDb();
+      isScrapeRunning = true;
+      await initDb();
+
+      if (scraper === "immonot") {
+        await immonotScraper();
+      } else if (scraper === "kermarrec") {
+        await kermarrecScraper();
+      } else {
+        // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
         await kermarrecScraper();
-        await closeDb();
-  
-      res.json({ status: "started", message: "Scrapers démarrés en arrière-plan (séquentiel)." });
+      }
+      
+      await closeDb();
+      res.json({ status: "running", message: "Scrapers ${scraper} démarrés." });
     } catch (e) {
       console.error("❌ Erreur dans /run-scrapers:", e);
       res.json({ status: "error", message: e.message });
+    } finally {
+      isScrapeRunning = false;
     }
-  });
+  }
+);
 
 const port = process.env.PORT || 8080;
 app.listen(port, () => console.log(`✅ API active sur port ${port}`));
