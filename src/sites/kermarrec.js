@@ -96,54 +96,89 @@ export const kermarrecScraper = async () => {
               await page.click("button#didomi-notice-agree-button");
           }
 
-          const annonce = await page.evaluate(() => {
-            const title = document.querySelector("h1.entry-title")?.textContent?.trim();
-            const price = document.querySelector("span.entry-price")?.textContent?.trim();
-            const ville = document.querySelector("span.entry-ville")?.textContent?.trim();
-            const pieces = document.querySelector("span.entry-pieces")?.textContent?.trim();
-            const surface = document.querySelector("span.entry-surface")?.textContent?.trim();
-            
-            // Récupérer la description
-            let description = '';
-            const descElement = document.querySelector("#description p");
-            if (descElement) {
-              description = descElement.textContent?.trim() || '';
+          // Extraction des informations principales
+          const extractData = async (selector) => {
+            try {
+              const element = await page.$(selector);
+              if (!element) return '';
+              
+              return await page.evaluate(el => {
+                const clone = el.cloneNode(true);
+                const ico = clone.querySelector('.ico');
+                if (ico) ico.remove();
+                return clone.textContent.trim().replace(/^[\s\n]+|[\s\n]+$/g, '');
+              }, element);
+            } catch (e) {
+              log.warn(`⚠️ Erreur lors de l'extraction: ${e.message}`);
+              return '';
             }
+          };
 
-            // Récupérer les photos
-            const photos = Array.from(document.querySelectorAll(".entry-medias img"))
-              .map(img => img.src)
-              .filter(src => src);
+          // Extraire les données
+          const [ville, surfaceText, typologie] = await Promise.all([
+            extractData('.entry-description-content p:has(.ico[data-ico="ville"])'),
+            extractData('.entry-description-content p:has(.ico[data-ico="surface"])'),
+            extractData('.entry-description-content p:has(.ico[data-ico="typologie"])')
+          ]);
 
-            return { 
-              title, 
-              price, 
-              ville, 
-              pieces, 
-              surface, 
-              description, 
-              photos 
-            };
-          });
+          // Extraire le prix (avec gestion des espaces et du texte HAI)
+          let prix = '';
+          try {
+            const prixElement = await page.$('.entry-price');
+            if (prixElement) {
+              prix = await page.evaluate(el => {
+                return el.textContent.replace(/[^0-9]/g, '');
+              }, prixElement);
+            }
+          } catch (e) {
+            log.warn(`⚠️ Impossible d'extraire le prix: ${e.message}`);
+          }
 
-          if (annonce && annonce.title) {
+          // Extraire la surface (en m²)
+          let surface = surfaceText ? surfaceText.replace(/[^0-9,.]/g, '').replace(',', '.') : '';
+          
+          // Extraire le nombre de pièces et chambres depuis la typologie
+          let pieces = '';
+          let chambres = '';
+          if (typologie) {
+            const piecesMatch = typologie.match(/(\d+)\s*pi[èe]ce/i);
+            const chambresMatch = typologie.match(/(\d+)\s*ch(?:ambres?)?/i);
+            pieces = piecesMatch ? piecesMatch[1] : '';
+            chambres = chambresMatch ? chambresMatch[1] : '';
+          }
+
+          // Récupérer la description
+          let description = '';
+          try {
+            description = await page.$eval('#description p', 
+              el => el.textContent?.trim() || ''
+            );
+          } catch (e) {
+            log.warn(`⚠️ Impossible d'extraire la description: ${e.message}`);
+          }
+
+          // Récupérer les photos
+          const photos = await page.$$eval('.entry-medias img', 
+            imgs => imgs.map(img => img.src).filter(src => src)
+          );
+
+          if (ville && prix) {
             await insertAnnonce({
-              type: annonce.title,
-              prix: annonce.price,
-              ville: annonce.ville,
-              pieces: annonce.pieces,
-              surface: annonce.surface,
-              description: annonce.description,
-              photos: annonce.photos,
+              type: typologie || 'Non spécifié',
+              prix: parseInt(prix) || 0,
+              ville: ville,
+              pieces: parseInt(pieces) || 0,
+              chambres: parseInt(chambres) || 0,
+              surface: parseFloat(surface) || 0,
+              description: description,
+              photos: photos,
               agence: "Kermarrec",
               lien: request.url,
             });
 
-            liensActuels.push(request.url);
-            log.info(`✅ Kermarrec - Annonce insérée : ${request.url}`);
           } else {
-            log.warning(`⚠️ Kermarrec - Données incomplètes pour ${request.url}`);
-            await insertErreur("Kermarrec", request.url, String("Données incomplètes pour ${request.url}"));
+            log.warning(`⚠️ Kermarrec - Données incomplètes pour ${request.url} (ville ou prix manquant)`);
+            await insertErreur("Kermarrec", request.url, "Données incomplètes (ville ou prix manquant)");
           }
         } catch (err) {
           log.error(`❌ Kermarrec - Erreur sur la page ${request.url}`, { error: String(err) });
