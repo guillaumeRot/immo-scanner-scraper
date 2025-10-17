@@ -3,6 +3,7 @@ import express from 'express';
 import { closeDb, initDb } from './db.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper } from './sites/kermarrec.js';
+import { eraScraper } from './sites/era.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -34,14 +35,17 @@ app.get('/run-scrapers', async (req, res) => {
         await immonotScraper();
       } else if (scraper === "kermarrec") {
         await kermarrecScraper();
+      } else if (scraper === "era") {
+        await eraScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
         await kermarrecScraper();
+        await eraScraper();
       }
       
       await closeDb();
-      res.json({ status: "running", message: "Scrapers ${scraper} démarrés." });
+      res.json({ status: "running", message: "Scrapers " + scraper + " démarrés." });
     } catch (e) {
       console.error("❌ Erreur dans /run-scrapers:", e);
       res.json({ status: "error", message: e.message });

@@ -3,10 +3,14 @@
 🏙 Vitré  
 🏙 Chateaugiron  
 
+💰 Budget maximum: 400 000 €  
+
+🏠 Type bien: Maison et Immeuble  
+
 # Liste des agences immobilières
 
 ✅ Kermarrec: Vitré / Chateaugiron  
-⌛ Laforet  
+⌛ Laforet (pas de résultats pour l'instant)  
 ⌛ ERA  
 ⌛ Blot  
 ⌛ Carnot  
