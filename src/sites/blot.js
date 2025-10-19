@@ -114,10 +114,7 @@ export const blotScraper = async () => {
           );
 
           // Ajout des liens au Set (évite les doublons) et affichage
-          pageLinks.forEach(link => {
-            console.log("Lien d'annonce trouvé :", link);
-            allLinks.add(link);
-          });
+          pageLinks.forEach(link => allLinks.add(link));
           
           log.info(`📌 Blot - ${pageLinks.length} annonces trouvées sur la page ${currentPage}.`);
           
@@ -130,6 +127,7 @@ export const blotScraper = async () => {
               await page.waitForLoadState("networkidle", { timeout: 10000 }),
               nextButton.click()
             ]);
+            await page.waitForTimeout(2000);
             currentPage++;
           } else {
             hasNextPage = false;
@@ -142,12 +140,12 @@ export const blotScraper = async () => {
         log.info(`📊 Blot - Total de ${uniqueLinks.length} annonces uniques trouvées sur toutes les pages.`);
 
         // Ajout des liens uniques dans la file d'attente
-        // for (const url of uniqueLinks) {
-        //   await requestQueue.addRequest({ 
-        //     url,
-        //     userData: { label: "DETAIL_PAGE" } 
-        //   });
-        // }
+        for (const url of uniqueLinks) {
+          await requestQueue.addRequest({ 
+            url,
+            userData: { label: "DETAIL_PAGE" } 
+          });
+        }
       }
 
       // 🏡 Étape 2 — Pages de détail
@@ -158,16 +156,75 @@ export const blotScraper = async () => {
           await page.goto(request.url, { waitUntil: "domcontentloaded", timeout: 15000 });
 
           const annonce = await page.evaluate(() => {
-            const title = document.querySelector(".property-title")?.textContent?.trim();
-            const price = document.querySelector(".property-price")?.textContent?.trim();
-            const ville = document.querySelector(".property-location")?.textContent?.trim();
-            const desc = document.querySelector(".property-description")?.textContent?.trim() || "";
+            // Récupération des images du slider
+            const images = Array.from(
+              document.querySelectorAll('.top-realty__slider .swiper-slide:not(.swiper-slide-duplicate) img')
+            ).map(img => img.src);
 
-            const photos = Array.from(document.querySelectorAll(".property-gallery img"), 
-              img => img.src || img.dataset.src
-            ).filter(Boolean);
+            // Extraction du titre
+            const title = document.querySelector(".main-realty__title")?.textContent?.trim();
+            
+            // Extraction du prix (on prend le contenu du span .main-realty__number)
+            const priceElement = document.querySelector(".main-realty__price .main-realty__number");
+            const price = priceElement?.textContent?.trim() || "Prix non communiqué";
+            
+            // Extraction de la ville depuis .main-realty__loc-txt
+            const villeElement = document.querySelector(".main-realty__loc-txt");
+            const ville = villeElement?.textContent?.trim() || "";
+            
+            // Extraction de la référence
+            const ref = document.querySelector(".main-realty__ref")?.textContent?.replace('Réf\u00A0:', '').trim() || "";
+            
+            // Extraction de la description complète
+            const descElement = document.querySelector(".description-realty__txt");
+            let description = "";
+            if (descElement) {
+                // On prend le texte complet en concaténant les deux parties de la description
+                const firstPart = document.querySelector(".read-more-txt-first")?.textContent?.replace('Lire plus', '').trim() || "";
+                const secondPart = document.querySelector(".read-more-txt-second")?.textContent?.trim() || "";
+                description = (firstPart + " " + secondPart).replace(/\s+/g, ' ').trim();
+            }
 
-            return { title, price, ville, desc, photos };
+            // Extraction des caractéristiques
+            const features = {};
+            const featureItems = document.querySelectorAll('.props-realty__item');
+            
+            featureItems.forEach(item => {
+                const icon = item.querySelector('.props-realty__icon')?.className || '';
+                const text = item.textContent.replace(/\s+/g, ' ').trim();
+                
+                if (icon.includes('icon-type-')) {
+                    features.type = text;
+                } else if (icon.includes('icon-date')) {
+                    features.anneeConstruction = text.replace('Construction :', '').trim();
+                } else if (icon.includes('icon-rooms')) {
+                    features.nbChambres = parseInt(text) || 0;
+                } else if (icon.includes('icon-pieces')) {
+                    features.nbPieces = parseInt(text) || 0;
+                } else if (icon.includes('icon-superficie')) {
+                    features.surface = text.replace('Surface :', '').replace('m²', '').trim();
+                } else if (icon.includes('icon-land')) {
+                    features.surfaceTerrain = text.replace('Surface terrain :', '').replace('m²', '').trim();
+                } else if (icon.includes('icon-garages')) {
+                    features.nbGarages = parseInt(text) || 0;
+                } else if (icon.includes('icon-chauffage')) {
+                    features.chauffage = text.replace('Chauffage :', '').trim();
+                }
+            });
+
+            return { 
+              title: features.type, 
+              price,
+              ville,
+              ref,
+              desc: description,
+              features,
+              images,
+              // Pour rétrocompatibilité
+              photos: images,
+              nbPieces: features.nbPieces,
+              surface: features.surface
+            };
           });
 
           if (annonce && annonce.title) {
@@ -175,6 +232,8 @@ export const blotScraper = async () => {
               type: annonce.title,
               prix: annonce.price,
               ville: annonce.ville,
+              pieces: annonce.nbPieces,
+              surface: annonce.surface,
               description: annonce.desc,
               photos: annonce.photos,
               agence: "Blot",
