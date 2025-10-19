@@ -12,7 +12,7 @@
 ✅ Kermarrec: Vitré / Chateaugiron  
 ⌛ Laforet (pas de résultats pour l'instant)  
 ✅ ERA  
-⌛ Blot  
+✅ Blot  
 ⌛ Carnot  
 ⌛ Penn immobilier  
 ⌛ Diard  
