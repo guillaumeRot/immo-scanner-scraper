@@ -4,6 +4,7 @@ import { closeDb, initDb } from './db.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper } from './sites/kermarrec.js';
 import { eraScraper } from './sites/era.js';
+import { blotScraper } from './sites/blot.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -37,11 +38,14 @@ app.get('/run-scrapers', async (req, res) => {
         await kermarrecScraper();
       } else if (scraper === "era") {
         await eraScraper();
+      } else if (scraper === "blot") {
+        await blotScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
         await kermarrecScraper();
         await eraScraper();
+        await blotScraper();
       }
       
       await closeDb();
