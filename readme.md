@@ -14,7 +14,7 @@
 ✅ ERA  
 ✅ Blot  
 ✅ Carnot  
-⌛ Penn immobilier  
+✅ Penn immobilier  
 ⌛ Diard  
 ⌛ Century 21  
 ⌛ Bretil'immo  

@@ -6,6 +6,7 @@ import { kermarrecScraper } from './sites/kermarrec.js';
 import { eraScraper } from './sites/era.js';
 import { blotScraper } from './sites/blot.js';
 import { carnotScraper } from './sites/carnot.js';
+import { pennScraper } from './sites/penn.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -43,6 +44,8 @@ app.get('/run-scrapers', async (req, res) => {
         await blotScraper();
       } else if (scraper === "carnot") {
         await carnotScraper();
+      } else if (scraper === "penn") {
+        await pennScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
@@ -50,6 +53,7 @@ app.get('/run-scrapers', async (req, res) => {
         await eraScraper();
         await blotScraper();
         await carnotScraper();
+        await pennScraper();
       }
       
       await closeDb();
