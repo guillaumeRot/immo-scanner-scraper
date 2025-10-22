@@ -16,7 +16,7 @@
 ✅ Carnot  
 ✅ Penn immobilier  
 ✅ Diard  
-⌛ Century 21  
+✅ Century 21  
 ⌛ Bretil'immo  
 ⌛ Boyer  
 ⌛ FNAIM  

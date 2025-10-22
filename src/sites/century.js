@@ -2,12 +2,12 @@ import { PlaywrightCrawler, RequestQueue } from "crawlee";
 import { chromium } from "playwright";
 import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
 
-export const diardScraper = async () => {
-  const requestQueue = await RequestQueue.open(`diard-${Date.now()}`);
+export const centuryScraper = async () => {
+  const requestQueue = await RequestQueue.open(`century-${Date.now()}`);
   
   // On démarre par la première page des annonces
   await requestQueue.addRequest({
-    url: "https://www.cabinet-diard-immobilier.fr/acheter-louer?maisons=1&immeubles=1&ref=&budget_min=&budget_max=400000&surface=&ville=vitr%C3%A9&op=Rechercher&geolocalisation_rayon_data=&latitude=&longitude=&form_build_id=form-BF7c8Zw2ucBnppSkmqJnGo0iQU8NRfhQ-_5uY2ldI9o&form_id=b2iimmo_realty_search",
+    url: "https://www.century21.fr/annonces/f/achat-maison-immeuble-ancien/v-chateaugiron/cpv-35500_vitre/s-0-/st-0-/b-0-400000/?cible=cpv-35500_vitre",
     userData: { label: "LIST_PAGE" },
   });
 
@@ -38,73 +38,50 @@ export const diardScraper = async () => {
 
       // 🧭 Étape 1 — Pages de liste
       if (label === "LIST_PAGE") {
-        log.info(` Diard - Page de liste : ${request.url}`);
+        log.info(` Century 21 - Page de liste : ${request.url}`);
 
         await page.goto(request.url);
-        log.info(" Diard - Page chargée.");
+        log.info(" Century 21 - Page chargée.");
 
         // Attendre que les annonces soient chargées
-        await page.waitForSelector(".node--type-realty", { timeout: 10000 });
+        await page.waitForSelector(".js-the-list-of-properties-list-property", { timeout: 10000 });
 
         // Récupérer les liens des annonces de la page
         const links = await page.$$eval(
-          "article.node--type-realty a.full-link[href]",
-          (anchors) => anchors.map(a => {
-            // Convertir les URLs relatives en absolues si nécessaire
-            return a.href.startsWith('http') ? a.href : `https://www.cabinet-diard-immobilier.fr${a.href}`;
-          })
+          ".js-the-list-of-properties-list-property a",
+          (anchors) => {
+            return anchors
+              .map(a => {
+                let url = a.href.split('?')[0]; // Enlever les paramètres d'URL
+                if (!url.startsWith('http')) {
+                  url = `https://www.century21.fr${url.startsWith('/') ? '' : '/'}${url}`;
+                }
+                return url;
+              });
+          }
         );
 
         // Filtrer les doublons
         const uniqueLinks = [...new Set(links)];
-        log.info(`📌 Diard - ${uniqueLinks.length} annonces uniques trouvées sur cette page.`);
+        log.info(`📌 Century 21 - ${uniqueLinks.length} annonces uniques trouvées sur cette page.`);
 
         // Ajouter chaque lien dans la file pour traitement détaillé
         for (const url of uniqueLinks) {
+          liensActuels.push(url);
           await requestQueue.addRequest({ 
             url, 
             userData: { label: "DETAIL_PAGE" } 
           });
         }
 
-        // Gestion de la pagination
-        try {
-          // Vérifier s'il y a un lien "page suivante" avec rel="next"
-          const nextPageLink = await page.locator('a.page-link[rel="next"]').first();
-          
-          if (await nextPageLink.count() > 0) {
-            const nextUrl = await nextPageLink.getAttribute("href");
-            if (nextUrl) {
-              // Construire l'URL complète si nécessaire
-              const baseUrl = 'https://www.cabinet-diard-immobilier.fr';
-              const fullNextUrl = nextUrl.startsWith('http') ? nextUrl : `${baseUrl}${nextUrl.startsWith('?') ? '/acheter-louer' : ''}${nextUrl}`;
-              
-              log.info(`➡️ Diard - Page suivante détectée: ${fullNextUrl}`);
-              
-              // Ajouter la page suivante à la file d'attente
-              await requestQueue.addRequest({ 
-                url: fullNextUrl,
-                userData: { label: "LIST_PAGE" }
-              });
-            }
-          } else {
-            // Vérifier s'il y a une pagination active mais pas de bouton suivant (dernière page)
-            const pagination = await page.locator('ul.pagination').count();
-            if (pagination > 0) {
-              log.info("✅ Diard - Dernière page de la pagination atteinte.");
-            } else {
-              log.info("ℹ️ Diard - Aucune pagination détectée.");
-            }
-          }
-        } catch (error) {
-          log.error(`❌ Diard - Erreur lors de la gestion de la pagination: ${error.message}`);
-        }
+        // Pas de pagination nécessaire - une seule page à traiter
+        log.info("ℹ️ Century 21 - Traitement de la page unique terminé.");
       }
 
       // 🏡 Étape 2 — Pages de détail
       if (label === "DETAIL_PAGE") {
         try {
-          log.info(`📄 Diard - Page détail : ${request.url}`);
+          log.info(`📄 Century 21 - Page détail : ${request.url}`);
 
           await page.goto(request.url, { waitUntil: "domcontentloaded" });
 
@@ -115,11 +92,15 @@ export const diardScraper = async () => {
               document.querySelector(selector)?.textContent.trim() || '';
             
             // Titre et type de bien
-            const type = cleanText('.field--name-field-realty-type');
-            const title = type ? `${type} à ${cleanText('.content-container p strong').substring(6)}` : 'Bien non spécifié';
+            const title = document.querySelector('h1 > span:first-child')?.textContent.trim() || 'Bien non spécifié';
+            
+            // Ville
+            const locationSpan = document.querySelector('h1 > span:nth-child(3)');
+            const locationText = locationSpan?.textContent.trim() || '';
+            const city = locationText ? locationText.substring(0, locationText.length - 5).trim() : '';
             
             // Prix
-            const priceText = cleanText('.container-price .price');
+            const priceText = cleanText('.c-the-property-abstract__price');
             const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
             
             // Surface habitable
@@ -130,13 +111,18 @@ export const diardScraper = async () => {
               ?.textContent
               .replace(/[^0-9]/g, '') || '0';
             const surface = parseInt(surfaceText) || 0;
+
+            // Photos
+            const photos = Array.from(document.querySelectorAll('.c-the-detail-images__items-container img')).map(img => 
+              "https://www.century21.fr/" + img.getAttribute('src')
+            );
             
             // Pièces et chambres
             const roomsText = cleanText('.field--name-field-realty-rooms .field__item');
             const bedrooms = parseInt(roomsText) || 0;
             
             // Description
-            const descriptionElement = document.querySelector('.field--name-field-realty-comment');
+            const descriptionElement = document.querySelector('.c-the-property-detail-description .has-formated-text');
             const description = descriptionElement ? descriptionElement.textContent.trim() : '';
             
             // Localisation (on prend le texte du premier strong et on enlève les 6 premiers caractères)
@@ -144,14 +130,6 @@ export const diardScraper = async () => {
             
             // Référence
             const reference = cleanText('.field--name-field-realty-reference .field__item');
-            
-            // Photos
-            const photos = Array.from(document.querySelectorAll('.popup-galerie a.image-galerie[href*="/sites/default/files/"]'))
-              .map(a => {
-                const href = a.getAttribute('href');
-                return href.startsWith('http') ? href : `https://www.cabinet-diard-immobilier.fr${href}`;
-              })
-              .filter(Boolean);
 
             // Extraction des détails supplémentaires
             const details = {};
@@ -179,7 +157,7 @@ export const diardScraper = async () => {
               reference,
               photos,
               url: window.location.href,
-              source: 'Diard Immobilier',
+              source: 'Century 21',
               timestamp: new Date().toISOString()
             };
           });
@@ -195,29 +173,29 @@ export const diardScraper = async () => {
               surface: property.surface,
               description: property.description,
               photos: property.photos,
-              agence: "Diard",
+              agence: "Century 21",
               lien: request.url,
             });
           } else {
-            log.warning(`⚠️ Diard - Données incomplètes pour ${request.url}`);
-            await insertErreur("Diard", request.url, "Données incomplètes");
+            log.warning(`⚠️ Century 21 - Données incomplètes pour ${request.url}`);
+            await insertErreur("Century 21", request.url, "Données incomplètes");
           }
         } catch (err) {
-          log.error(`❌ Diard - Erreur sur la page ${request.url}`, { error: String(err) });
-          await insertErreur("Diard", request.url, String(err));
+          log.error(`🚨 Century 21 - Erreur pour ${request.url}: ${err.message}`);
+          await insertErreur("Century 21", request.url, err.message);
         }
       }
     },
 
     failedRequestHandler({ request, log }) {
-      log.error(`🚨 Diard - Échec permanent pour ${request.url}`);
+      log.error(`🚨 Century 21 - Échec permanent pour ${request.url}`);
     },
   });
 
   await crawler.run();
 
   // Nettoyer les annonces manquantes
-  await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
+  await deleteMissingAnnonces("Century 21", Array.from(new Set(liensActuels)));
 
-  console.log("✅ Diard - Scraping Diard terminé !");
+  console.log("✅ Century 21 - Scraping Century 21 terminé !");
 };
