@@ -6,6 +6,7 @@ import { kermarrecScraper } from './sites/kermarrec.js';
 import { eraScraper } from './sites/era.js';
 import { blotScraper } from './sites/blot.js';
 import { carnotScraper } from './sites/carnot.js';
+import { diardScraper } from './sites/diard.js';
 import { pennScraper } from './sites/penn.js';
 const app = express();
 
@@ -44,6 +45,8 @@ app.get('/run-scrapers', async (req, res) => {
         await blotScraper();
       } else if (scraper === "carnot") {
         await carnotScraper();
+      } else if (scraper === "diard") {
+        await diardScraper();
       } else if (scraper === "penn") {
         await pennScraper();
       } else {
@@ -54,6 +57,7 @@ app.get('/run-scrapers', async (req, res) => {
         await blotScraper();
         await carnotScraper();
         await pennScraper();
+        await diardScraper();
       }
       
       await closeDb();

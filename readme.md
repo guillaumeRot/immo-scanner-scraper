@@ -15,7 +15,7 @@
 ✅ Blot  
 ✅ Carnot  
 ✅ Penn immobilier  
-⌛ Diard  
+✅ Diard  
 ⌛ Century 21  
 ⌛ Bretil'immo  
 ⌛ Boyer  
