@@ -9,6 +9,7 @@ import { carnotScraper } from './sites/carnot.js';
 import { diardScraper } from './sites/diard.js';
 import { pennScraper } from './sites/penn.js';
 import { centuryScraper } from './sites/century.js';
+import { bretilimmoScraper } from './sites/bretilimmo.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -52,6 +53,8 @@ app.get('/run-scrapers', async (req, res) => {
         await pennScraper();
       } else if (scraper === "century") {
         await centuryScraper();
+      } else if (scraper === "bretilimmo") {
+        await bretilimmoScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
@@ -62,6 +65,7 @@ app.get('/run-scrapers', async (req, res) => {
         await pennScraper();
         await diardScraper();
         await centuryScraper();
+        await bretilimmoScraper();
       }
       
       await closeDb();

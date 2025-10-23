@@ -17,7 +17,7 @@
 ✅ Penn immobilier  
 ✅ Diard  
 ✅ Century 21  
-⌛ Bretil'immo  
+✅ Bretil'immo  
 ⌛ Boyer  
 ⌛ FNAIM  
 ⌛ Square habitat  
