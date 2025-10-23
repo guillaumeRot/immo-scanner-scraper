@@ -18,7 +18,7 @@
 ✅ Diard  
 ✅ Century 21  
 ✅ Bretil'immo  
-⌛ Boyer  
+✅ Boyer  
 ⌛ FNAIM  
 ⌛ Square habitat  
 
