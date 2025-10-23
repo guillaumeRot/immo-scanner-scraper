@@ -25,7 +25,7 @@
 # Liste des sites de notaires
 
 ✅ Immonot: Vitré / Chateaugiron  
-⌛ Notaires et bretons  
+✅ Notaires et bretons  
 ⌛ notaires.fr  
 ⌛ immonotairesencheres.com  
 ⌛ trente-cinq-notaires.fr  

@@ -11,6 +11,7 @@ import { pennScraper } from './sites/penn.js';
 import { centuryScraper } from './sites/century.js';
 import { bretilimmoScraper } from './sites/bretilimmo.js';
 import { boyerScraper } from './sites/boyer.js';
+import { notairesBretonsScraper } from './sites/notaires-bretons.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -58,6 +59,8 @@ app.get('/run-scrapers', async (req, res) => {
         await bretilimmoScraper();
       } else if (scraper === "boyer") {
         await boyerScraper();
+      } else if (scraper === "notaires-bretons") {
+        await notairesBretonsScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
@@ -70,6 +73,7 @@ app.get('/run-scrapers', async (req, res) => {
         await centuryScraper();
         await bretilimmoScraper();
         await boyerScraper();
+        await notairesBretonsScraper();
       }
       
       await closeDb();
