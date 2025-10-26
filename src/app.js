@@ -61,6 +61,8 @@ app.get('/run-scrapers', async (req, res) => {
         await boyerScraper();
       } else if (scraper === "notaires-bretons") {
         await notairesBretonsScraper();
+      // } else if (scraper === "fnaim") {
+      //   await fnaimScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
@@ -74,6 +76,7 @@ app.get('/run-scrapers', async (req, res) => {
         await bretilimmoScraper();
         await boyerScraper();
         await notairesBretonsScraper();
+        // await fnaimScraper();
       }
       
       await closeDb();

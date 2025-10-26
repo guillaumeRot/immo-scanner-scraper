@@ -19,7 +19,7 @@
 ✅ Century 21  
 ✅ Bretil'immo  
 ✅ Boyer  
-⌛ FNAIM  
+⌛ FNAIM (instable)
 ⌛ Square habitat  
 
 # Liste des sites de notaires
