@@ -12,6 +12,7 @@ import { centuryScraper } from './sites/century.js';
 import { bretilimmoScraper } from './sites/bretilimmo.js';
 import { boyerScraper } from './sites/boyer.js';
 import { notairesBretonsScraper } from './sites/notaires-bretons.js';
+import { immobilierNotairesScraper } from './sites/immobilier-notaires.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -61,6 +62,8 @@ app.get('/run-scrapers', async (req, res) => {
         await boyerScraper();
       } else if (scraper === "notaires-bretons") {
         await notairesBretonsScraper();
+      } else if (scraper === "immobilier-notaires") {
+        await immobilierNotairesScraper();
       // } else if (scraper === "fnaim") {
       //   await fnaimScraper();
       } else {
@@ -76,6 +79,7 @@ app.get('/run-scrapers', async (req, res) => {
         await bretilimmoScraper();
         await boyerScraper();
         await notairesBretonsScraper();
+        await immobilierNotairesScraper();
         // await fnaimScraper();
       }
       

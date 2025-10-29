@@ -20,13 +20,13 @@
 ✅ Bretil'immo  
 ✅ Boyer  
 ⌛ FNAIM (instable)
-⌛ Square habitat  
+⌛ Square habitat (pas de résultats pour l'instant)  
 
 # Liste des sites de notaires
 
 ✅ Immonot: Vitré / Chateaugiron  
 ✅ Notaires et bretons  
-⌛ notaires.fr  
+✅ immobilier.notaires.fr  
 ⌛ immonotairesencheres.com  
 ⌛ trente-cinq-notaires.fr  
 
