@@ -148,161 +148,226 @@ export const figaroImmobilierScraper = async () => {
 
           await page.goto(request.url, { waitUntil: "domcontentloaded" });
 
-          // Extraction des informations principales
-          const property = await page.evaluate(async () => {
-            // Fonction pour nettoyer le texte
-            const cleanText = (selector) => 
-              document.querySelector(selector)?.textContent.trim() || '';
+          await page.waitForSelector('script#__NUXT_DATA__', { state: "attached" });
+          const data = await page.$eval('script#__NUXT_DATA__', (el) => JSON.parse(el.textContent));
+          
+          // Fonction pour extraire les groupes d'images depuis les données JSON
+          const extractImageGroups = (data) => {
+            const imageGroups = [];
             
-            // Titre et type de bien
-            const titleElement = document.querySelector('.classified-main-infos-title h1');
-            const titleText = titleElement ? titleElement.textContent.toLowerCase() : '';
-            
-            let type = 'Autre';
-            if (titleText.includes('maison')) {
-              type = 'Maison';
-            } else if (titleText.includes('appartement')) {
-              type = 'Appartement';
-            } else if (titleText.includes('immeuble')) {
-              type = 'Immeuble';
-            } else if (titleText.includes('terrain')) {
-              type = 'Terrain';
-            } else if (titleText.includes('local') || titleText.includes('bureau')) {
-              type = 'Local professionnel';
+            try {
+              // Parcourir les clés du JSON
+              let currentGroup = null;
+              const processObject = (obj) => {
+                if (!obj || (typeof obj !== 'object' && typeof obj !== 'string')) return;
+                
+                console.log("Objet traité:" + typeof obj + " || ", currentGroup, " || ", obj);
+                // Vérifier si c'est le début d'un groupe d'images
+                if (obj.order !== undefined && obj.url !== undefined) {
+                  // Nouveau groupe trouvé
+                  // console.log("Nouveau groupe trouvé:", obj);
+                  currentGroup = {
+                    order: obj.order,
+                    urls: []
+                  };
+                  imageGroups.push(currentGroup);
+                  // console.log("currentGroup", currentGroup);
+                } 
+                // Si on a un groupe en cours et qu'on trouve une URL d'image
+                // else if (currentGroup && typeof obj === 'string' && 
+                //         obj.includes('googleusercontent.com')) {
+                else if (currentGroup && typeof obj === 'string' && 
+                        obj.includes('googleusercontent.com')) {
+                  // console.log("URL d'image trouvée:", obj);
+                  let url = obj;
+                  if (url.startsWith('//')) {
+                    url = 'https:' + url;
+                  }
+                  // Nettoyer les paramètres de requête pour éviter les doublons
+                  url = url.split('?')[0];
+                  if (!url.includes('logo') && !url.includes('icon')) {
+                    currentGroup.urls.push(url);
+                  }
+                }
+                
+                // Parcourir les valeurs de l'objet
+                Object.values(obj).forEach(value => {
+                  if (Array.isArray(value)) {
+                    value.forEach(item => processObject(item));
+                  } else if (value && (typeof value === 'object' 
+                    || (typeof value === 'string' && value.includes('googleusercontent.com')))) {
+                    processObject(value);
+                  }
+                });
+              };
+              
+              // Démarrer le traitement
+              processObject(data);
+
+              console.log("imageGroups", imageGroups);
+              
+              // Filtrer les groupes vides
+              return imageGroups.filter(group => group.urls.length > 0);
+              
+            } catch (error) {
+              console.error('Erreur lors de l\'extraction des groupes d\'images:', error);
+              return [];
             }
-            
-            // Extraction de la ville depuis le h1 > span (format: "à NomDeLaVille (CodePostal)")
-            const locationElement = document.querySelector('h1#classified-main-infos span');
-            const locationText = locationElement ? locationElement.textContent.trim() : '';
-            // On extrait le texte après "à " et avant la parenthèse
-            const locationMatch = locationText.match(/à\s+(.+?)(?=\s*\()/);
-            const propertyLocation = locationMatch ? locationMatch[1].trim() : '';
-            const title = `${type} à ${propertyLocation}`;
-            
-            // Prix
-            const priceElement = document.querySelector('.classified-price__detail .classified-price-per-m2 strong');
-            const priceText = priceElement ? priceElement.textContent.trim() : '';
-            const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
-            
-            // Extraction des caractéristiques
-            const features = {};
-            
-            // Fonction pour extraire un nombre d'une chaîne de caractères
-            const extractNumber = (text) => {
-              const match = text?.match(/(\d+)/);
-              return match ? parseInt(match[1]) : 0;
-            };
-            
-            // Surface habitable (icône .ic-area)
-            const surfaceElement = document.querySelector('.features-list .ic-area')?.closest('li')?.querySelector('.feature');
-            const surface = extractNumber(surfaceElement?.textContent);
-            
-            // Surface du terrain (classe .area-ground)
-            const groundSurfaceElement = document.querySelector('.features-list .area-ground .feature');
-            const groundSurface = extractNumber(groundSurfaceElement?.textContent);
-            
-            // Nombre de pièces (icône .ic-room)
-            const roomsElement = document.querySelector('.features-list .ic-room')?.closest('li')?.querySelector('.feature');
-            const rooms = extractNumber(roomsElement?.textContent);
-            
-            // Nombre de chambres (icône .ic-bedroom)
-            const bedroomsElement = document.querySelector('.features-list .ic-bedroom')?.closest('li')?.querySelector('.feature');
-            const bedrooms = extractNumber(bedroomsElement?.textContent);
-            
-            // Description
-            const descriptionElement = document.querySelector('.truncated-description span span');
-            const description = descriptionElement ? descriptionElement.textContent.trim() : '';
+          };
+          
+          // Extraire les groupes d'images
+          const imageGroups = extractImageGroups(data);
+          console.log('Groupes d\'images extraits:', JSON.stringify(imageGroups, null, 2));
+
+          // Extraction des informations principales
+          // Fonction pour nettoyer le texte
+          const cleanText = async (selector) => {
+            const element = await page.$(selector);
+            return element ? (await element.textContent()).trim() : '';
+          };
+          
+          // Fonction pour extraire un nombre d'une chaîne de caractères
+          const extractNumber = async (selector) => {
+            const element = await page.$(selector);
+            if (!element) return 0;
+            const text = await element.textContent();
+            const match = text?.match(/(\d+)/);
+            return match ? parseInt(match[1]) : 0;
+          };
+          
+          // Titre et type de bien
+          const titleElement = await page.$('.classified-main-infos-title h1');
+          const titleText = titleElement ? (await titleElement.textContent()).toLowerCase() : '';
+          
+          let type = 'Autre';
+          if (titleText.includes('maison')) {
+            type = 'Maison';
+          } else if (titleText.includes('appartement')) {
+            type = 'Appartement';
+          } else if (titleText.includes('immeuble')) {
+            type = 'Immeuble';
+          } else if (titleText.includes('terrain')) {
+            type = 'Terrain';
+          } else if (titleText.includes('local') || titleText.includes('bureau')) {
+            type = 'Local professionnel';
+          }
+          
+          // Extraction de la ville depuis le h1 > span (format: "à NomDeLaVille (CodePostal)")
+          const locationElement = await page.$('h1#classified-main-infos span');
+          const locationText = locationElement ? (await locationElement.textContent()).trim() : '';
+          // On extrait le texte après "à " et avant la parenthèse
+          const locationMatch = locationText.match(/à\s+(.+?)(?=\s*\()/);
+          const propertyLocation = locationMatch ? locationMatch[1].trim() : '';
+          const title = `${type} à ${propertyLocation}`;
+          
+          // Prix
+          const priceElement = await page.$('.classified-price__detail .classified-price-per-m2 strong');
+          const priceText = priceElement ? (await priceElement.textContent()).trim() : '';
+          const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
+          
+          // Extraction des caractéristiques
+          const features = {};
+          
+          // Fonction utilitaire pour trouver un élément frère
+          const findSiblingWithSelector = async (element, selector) => {
+            if (!element) return null;
+            const parent = await element.$('xpath=..');
+            return parent ? parent.$(selector) : null;
+          };
+
+          // Surface habitable (icône .ic-area)
+          const surfaceIcon = await page.$('.features-list .ic-area');
+          const surfaceElement = surfaceIcon ? await findSiblingWithSelector(surfaceIcon, '.feature') : null;
+          const surface = surfaceElement ? await extractNumber('.features-list .ic-area') : 0;
+          
+          // Surface du terrain (classe .area-ground)
+          const groundSurfaceElement = await page.$('.features-list .area-ground .feature');
+          const groundSurface = groundSurfaceElement ? await extractNumber('.features-list .area-ground .feature') : 0;
+          
+          // Nombre de pièces (icône .ic-room)
+          const roomsIcon = await page.$('.features-list .ic-room');
+          const roomsElement = roomsIcon ? await findSiblingWithSelector(roomsIcon, '.feature') : null;
+          const rooms = roomsElement ? await extractNumber('.features-list .ic-room') : 0;
+          
+          // Nombre de chambres (icône .ic-bedroom)
+          const bedroomsIcon = await page.$('.features-list .ic-bedroom');
+          const bedroomsElement = bedroomsIcon ? await findSiblingWithSelector(bedroomsIcon, '.feature') : null;
+          const bedrooms = bedroomsElement ? await extractNumber('.features-list .ic-bedroom') : 0;
+          
+          // Description
+          const descriptionElement = await page.$('.truncated-description span span');
+          const description = descriptionElement ? (await descriptionElement.textContent()).trim() : '';
             
             // Localisation (on prend le texte du premier strong et on enlève les 6 premiers caractères)
             const location = propertyLocation;
             
             // Référence
-            const reference = cleanText('.field--name-field-realty-reference .field__item');
+            const reference = await cleanText('.field--name-field-realty-reference .field__item');
             
-            // Récupération des images depuis la galerie
+            // Utiliser les groupes d'images extraits du JSON si disponibles
             let photos = [];
-            try {
-              // Fonction pour extraire les images de la galerie
-              photos = await page.evaluate(() => {
-                const images = [];
-
-                console.log('images', images);
+            if (imageGroups && imageGroups.length > 0) {
+                console.log(`Utilisation de ${imageGroups.length} groupes d'images extraits du JSON`);
                 
-                // Essayer de trouver le bouton "Voir les photos"
-                const viewPhotosButton = document.querySelector('.button-container .btn-secondary');
-                if (viewPhotosButton) {
-                  viewPhotosButton.click();
-                  // Ne pas attendre ici, la galerie se chargera en arrière-plan
-                }
+                // Si on a des groupes d'images, on prend le premier groupe (ou on peut les combiner selon les besoins)
+                const allImageUrls = [];
+                imageGroups.forEach(group => {
+                    if (group.urls && group.urls.length > 0) {
+                        allImageUrls.push(...group.urls);
+                    }
+                });
                 
-                // D'abord essayer de récupérer les images de la galerie
-                const galleryImages = Array.from(document.querySelectorAll('.classified-medias-gallery img[src]'));
-                if (galleryImages.length > 0) {
-                  return galleryImages.map(img => ({
-                    url: img.src,
-                    alt: img.alt || ''
-                  }));
-                }
+                // Créer un ensemble pour éliminer les doublons
+                const uniqueUrls = [...new Set(allImageUrls)];
                 
-                // Sinon, essayer de récupérer les miniatures
-                const thumbnails = Array.from(document.querySelectorAll('.classified-medias__picture img[src]'));
-                if (thumbnails.length > 0) {
-                  return thumbnails.map(img => ({
-                    url: img.src,
-                    alt: img.alt || ''
-                  }));
-                }
-                
-                return [];
-              });
-            } catch (error) {
-              console.error('Erreur lors de l\'extraction des images:', error);
-            }
-
-            // Fallback sur la méthode classique si pas d'images trouvées
-            if (photos.length === 0) {
-              const fallbackImages = document.querySelectorAll('.popup-galerie a.image-galerie[href*="/sites/default/files/"]');
-              if (fallbackImages.length > 0) {
-                photos = Array.from(fallbackImages).map(a => {
-                  const href = a.getAttribute('href');
-                  return {
-                    url: href,
+                // Créer le tableau de photos avec les URLs uniques
+                photos = uniqueUrls.map(url => ({
+                    url,
                     alt: ''
-                  };
-                }).filter(Boolean);
-              }
+                }));
+                
+                console.log(`Total de ${photos.length} images uniques extraites du JSON`);
+            } 
+
+            console.log(`Extraction terminée. ${photos.length} photos trouvées.`);
+
+          // Extraction des détails supplémentaires
+          const details = { pieces: 0, chambres: 0, sdb: 0 };
+          
+          // Récupérer tous les éléments de caractéristiques
+          const featureItems = await page.$$('.field--name-field-realty-features .field__item');
+          
+          for (const item of featureItems) {
+            const text = (await item.textContent()).trim();
+            if (text.includes('Pièce(s)')) {
+              details.pieces = parseInt(text) || 0;
+            } else if (text.includes('Chambre(s)')) {
+              details.chambres = parseInt(text) || 0;
+            } else if (text.includes('Salle(s) de bain')) {
+              details.sdb = parseInt(text) || 0;
+            } else if (text.includes('Surface terrain')) {
+              const landSurface = parseInt(text.replace(/[^0-9]/g, ''));
+              if (!isNaN(landSurface)) details.landSurface = landSurface;
             }
+          }
 
-            // Extraction des détails supplémentaires
-            const details = {};
-            document.querySelectorAll('.field--name-field-realty-features .field__item').forEach(item => {
-              const text = item.textContent.trim();
-              if (text.includes('Pièce(s)')) details.pieces = parseInt(text) || 0;
-              if (text.includes('Chambre(s)')) details.chambres = parseInt(text) || 0;
-              if (text.includes('Salle(s) de bain')) details.sdb = parseInt(text) || 0;
-              if (text.includes('Surface terrain')) {
-                const landSurface = parseInt(text.replace(/[^0-9]/g, ''));
-                if (!isNaN(landSurface)) details.landSurface = landSurface;
-              }
-            });
-
-            return {
-              title,
-              price,
-              surface,
-              landSurface: details.landSurface || null,
-              bedrooms: details.chambres || bedrooms,
-              pieces: details.pieces || bedrooms + 1, // On suppose que le nombre de pièces = chambres + séjour
-              sdb: details.sdb || 0,
-              description,
-              location,
-              reference,
-              photos,
-              url: window.location.href,
-              source: 'Figaro Immobilier',
-              timestamp: new Date().toISOString()
-            };
-          });
+          // Construire l'objet property
+          const property = {
+            title,
+            price,
+            surface,
+            landSurface: details.landSurface || null,
+            bedrooms: details.chambres || bedrooms,
+            pieces: details.pieces || bedrooms + 1, // On suppose que le nombre de pièces = chambres + séjour
+            sdb: details.sdb || 0,
+            description,
+            location,
+            reference,
+            photos,
+            url: request.url,
+            source: 'Figaro Immobilier',
+            timestamp: new Date().toISOString()
+          };
 
           log.info(` Figaro Immobilier - Extraction des données : `, property);
           
