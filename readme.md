@@ -38,4 +38,4 @@
 ⌛ LogicImmo  
 ⌛ acheter-louer.fr  
 ⌛ proprietes-privees.com  
-⌛ immobilier.lefigaro.com  
+✅ immobilier.lefigaro.com  

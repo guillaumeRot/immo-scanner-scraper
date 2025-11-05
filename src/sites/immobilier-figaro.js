@@ -156,29 +156,52 @@ export const figaroImmobilierScraper = async () => {
             const imageGroups = [];
             
             try {
+              // Récupérer le nombre de photos total
+              let photosCount = 0;
+              const findPhotosCount = (obj) => {
+                if (!obj || (typeof obj !== 'object' && typeof obj !== 'string')) return;
+                
+                if (obj.photosCount !== undefined) {
+                  photosCount = obj.photosCount;
+                  return;
+                }
+                
+                Object.values(obj).forEach(value => {
+                  if (Array.isArray(value)) {
+                    value.forEach(item => findPhotosCount(item));
+                  } else if (value && typeof value === 'object') {
+                    findPhotosCount(value);
+                  }
+                });
+              };
+              
               // Parcourir les clés du JSON
               let currentGroup = null;
               const processObject = (obj) => {
                 if (!obj || (typeof obj !== 'object' && typeof obj !== 'string')) return;
-                
-                console.log("Objet traité:" + typeof obj + " || ", currentGroup, " || ", obj);
+
                 // Vérifier si c'est le début d'un groupe d'images
                 if (obj.order !== undefined && obj.url !== undefined) {
-                  // Nouveau groupe trouvé
-                  // console.log("Nouveau groupe trouvé:", obj);
-                  currentGroup = {
-                    order: obj.order,
-                    urls: []
-                  };
-                  imageGroups.push(currentGroup);
-                  // console.log("currentGroup", currentGroup);
+                  // Vérifier si un groupe avec ce numéro d'ordre existe déjà
+                  const existingGroupIndex = imageGroups.findIndex(g => g.order === obj.order);
+                  
+                  if (existingGroupIndex === -1) {
+                    // Créer un nouveau groupe uniquement si aucun groupe avec cet ordre n'existe
+                    currentGroup = {
+                      order: obj.order,
+                      urls: []
+                    };
+                    imageGroups.push(currentGroup);
+                  } else {
+                    // Ne pas traiter ce groupe car il existe déjà
+                    currentGroup = null;
+                  }
                 } 
                 // Si on a un groupe en cours et qu'on trouve une URL d'image
                 // else if (currentGroup && typeof obj === 'string' && 
                 //         obj.includes('googleusercontent.com')) {
-                else if (currentGroup && typeof obj === 'string' && 
+                else if (currentGroup && currentGroup.order <= photosCount && typeof obj === 'string' && 
                         obj.includes('googleusercontent.com')) {
-                  // console.log("URL d'image trouvée:", obj);
                   let url = obj;
                   if (url.startsWith('//')) {
                     url = 'https:' + url;
@@ -201,10 +224,11 @@ export const figaroImmobilierScraper = async () => {
                 });
               };
               
-              // Démarrer le traitement
+              // D'abord trouver le nombre total de photos
+              findPhotosCount(data);
+              
+              // Ensuite traiter les images
               processObject(data);
-
-              console.log("imageGroups", imageGroups);
               
               // Filtrer les groupes vides
               return imageGroups.filter(group => group.urls.length > 0);
@@ -216,8 +240,13 @@ export const figaroImmobilierScraper = async () => {
           };
           
           // Extraire les groupes d'images
-          const imageGroups = extractImageGroups(data);
-          console.log('Groupes d\'images extraits:', JSON.stringify(imageGroups, null, 2));
+          let imageGroups = extractImageGroups(data);
+          
+          // 1. Supprimer les entrées avec un tableau d'URLs vide
+          // 2. Extraire uniquement la première URL de chaque groupe
+          const imageUrls = imageGroups
+            .filter(group => group.urls.length > 0)
+            .map(group => group.urls[0]);
 
           // Extraction des informations principales
           // Fonction pour nettoyer le texte
@@ -298,39 +327,12 @@ export const figaroImmobilierScraper = async () => {
           const descriptionElement = await page.$('.truncated-description span span');
           const description = descriptionElement ? (await descriptionElement.textContent()).trim() : '';
             
-            // Localisation (on prend le texte du premier strong et on enlève les 6 premiers caractères)
-            const location = propertyLocation;
+          // Localisation (on prend le texte du premier strong et on enlève les 6 premiers caractères)
+          const location = propertyLocation;
+          
+          // Référence
+          const reference = await cleanText('.field--name-field-realty-reference .field__item');
             
-            // Référence
-            const reference = await cleanText('.field--name-field-realty-reference .field__item');
-            
-            // Utiliser les groupes d'images extraits du JSON si disponibles
-            let photos = [];
-            if (imageGroups && imageGroups.length > 0) {
-                console.log(`Utilisation de ${imageGroups.length} groupes d'images extraits du JSON`);
-                
-                // Si on a des groupes d'images, on prend le premier groupe (ou on peut les combiner selon les besoins)
-                const allImageUrls = [];
-                imageGroups.forEach(group => {
-                    if (group.urls && group.urls.length > 0) {
-                        allImageUrls.push(...group.urls);
-                    }
-                });
-                
-                // Créer un ensemble pour éliminer les doublons
-                const uniqueUrls = [...new Set(allImageUrls)];
-                
-                // Créer le tableau de photos avec les URLs uniques
-                photos = uniqueUrls.map(url => ({
-                    url,
-                    alt: ''
-                }));
-                
-                console.log(`Total de ${photos.length} images uniques extraites du JSON`);
-            } 
-
-            console.log(`Extraction terminée. ${photos.length} photos trouvées.`);
-
           // Extraction des détails supplémentaires
           const details = { pieces: 0, chambres: 0, sdb: 0 };
           
@@ -363,13 +365,11 @@ export const figaroImmobilierScraper = async () => {
             description,
             location,
             reference,
-            photos,
+            photos: imageUrls,
             url: request.url,
             source: 'Figaro Immobilier',
             timestamp: new Date().toISOString()
           };
-
-          log.info(` Figaro Immobilier - Extraction des données : `, property);
           
           // Vérifier les données et insérer dans la base de données
           if (property.title && property.price) {
