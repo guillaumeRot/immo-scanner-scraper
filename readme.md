@@ -37,5 +37,5 @@
 ⌛ PAP  
 ⌛ LogicImmo  
 ⌛ acheter-louer.fr  
-⌛ proprietes-privees.com  
+⌛ proprietes-privees.com (pas de résultats pour l'instant)  
 ✅ immobilier.lefigaro.com  

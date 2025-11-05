@@ -14,6 +14,7 @@ import { boyerScraper } from './sites/boyer.js';
 import { notairesBretonsScraper } from './sites/notaires-bretons.js';
 import { immobilierNotairesScraper } from './sites/immobilier-notaires.js';
 import { figaroImmobilierScraper } from './sites/immobilier-figaro.js';
+import { acheterLouerScraper } from './sites/acheter-louer.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -67,6 +68,8 @@ app.get('/run-scrapers', async (req, res) => {
         await immobilierNotairesScraper();
       } else if (scraper === "figaro-immobilier") {
         await figaroImmobilierScraper();
+      } else if (scraper === "acheter-louer") {
+        await acheterLouerScraper();
       // } else if (scraper === "fnaim") {
       //   await fnaimScraper();
       } else {
@@ -84,6 +87,7 @@ app.get('/run-scrapers', async (req, res) => {
         await notairesBretonsScraper();
         await immobilierNotairesScraper();
         await figaroImmobilierScraper();
+        await acheterLouerScraper();
         // await fnaimScraper();
       }
       
