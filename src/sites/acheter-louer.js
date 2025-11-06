@@ -91,7 +91,8 @@ export const acheterLouerScraper = async () => {
         try {
           log.info(`📄 Acheter-louer - Page détail : ${request.url}`);
 
-          await page.goto(request.url, { waitUntil: "domcontentloaded" });
+          await page.goto(request.url, { waitUntil: "networkidle" });
+          await page.waitForSelector(".ad-price", { timeout: 10000 });
 
           // Extraction des informations principales
           const property = await page.evaluate(() => {
@@ -99,69 +100,101 @@ export const acheterLouerScraper = async () => {
             const cleanText = (selector) => 
               document.querySelector(selector)?.textContent.trim() || '';
             
-            // Titre et type de bien
-            const type = cleanText('.field--name-field-realty-type');
-            const title = type ? `${type} à ${cleanText('.content-container p strong').substring(6)}` : 'Bien non spécifié';
+            // Extraction des informations d'adresse et de type de bien
+            const addressElement = document.querySelector('.ad-address .fl');
+            let ville = '';
+            let typeBien = '';
+            
+            if (addressElement && addressElement.textContent) {
+              const addressText = addressElement.textContent.trim();
+              // Nettoyage des espaces multiples et sauts de ligne
+              const cleanText = addressText.replace(/\s+/g, ' ').replace(/\n/g, ' ').trim();
+              const parts = cleanText.split(' ');
+              
+              // La ville est le 2e élément (index 1) après le code postal
+              if (parts.length > 1) {
+                ville = parts[1];
+                // Si la ville contient des chiffres (ex: code postal), on prend le mot suivant
+                if (/\d/.test(ville) && parts.length > 2) {
+                  ville = parts[2];
+                }
+              }
+              
+              // Le type de bien est généralement le mot après la ville
+              // On cherche 'maison' ou 'immeuble' dans le texte
+              const lowerText = cleanText.toLowerCase();
+              if (lowerText.includes('maison')) {
+                typeBien = 'maison';
+              } else if (lowerText.includes('appartement') || lowerText.includes('appart')) {
+                typeBien = 'appartement';
+              } else if (lowerText.includes('immeuble')) {
+                typeBien = 'immeuble';
+              } else if (parts.length > 2) {
+                // Si on n'a pas trouvé de type, on prend le 3e mot
+                typeBien = parts[2].toLowerCase();
+              }
+            }
             
             // Prix
-            const priceText = cleanText('.container-price .price');
+            const priceElement = document.querySelector(".ad-price");
+            const priceText = priceElement ? priceElement.textContent.trim() : '';
             const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
             
-            // Surface habitable
-            const surfaceText = Array.from(document.querySelectorAll('.list-container .item .name'))
-              .find(el => el.textContent.trim() === 'Surface')
-              ?.closest('.item')
-              ?.querySelector('.value')
-              ?.textContent
-              .replace(/[^0-9]/g, '') || '0';
-            const surface = parseInt(surfaceText) || 0;
+            // Extraction des informations principales depuis la barre du haut
+            const infoItems = document.querySelectorAll('.ad-bar-cont-top .unstyled li');
             
-            // Pièces et chambres
-            const roomsText = cleanText('.field--name-field-realty-rooms .field__item');
-            const bedrooms = parseInt(roomsText) || 0;
+            // Initialisation des variables
+            let surface = 0;
+            let pieces = 0;
+            let chambres = 0;
             
-            // Description
-            const descriptionElement = document.querySelector('.field--name-field-realty-comment');
-            const description = descriptionElement ? descriptionElement.textContent.trim() : '';
-            
-            // Localisation (on prend le texte du premier strong et on enlève les 6 premiers caractères)
-            const location = cleanText('.content-container p strong')?.substring(6) || '';
-            
-            // Référence
-            const reference = cleanText('.field--name-field-realty-reference .field__item');
-            
-            // Photos
-            const photos = Array.from(document.querySelectorAll('.popup-galerie a.image-galerie[href*="/sites/default/files/"]'))
-              .map(a => {
-                const href = a.getAttribute('href');
-                return href.startsWith('http') ? href : `https://www.cabinet-diard-immobilier.fr${href}`;
-              })
-              .filter(Boolean);
-
-            // Extraction des détails supplémentaires
-            const details = {};
-            document.querySelectorAll('.field--name-field-realty-features .field__item').forEach(item => {
-              const text = item.textContent.trim();
-              if (text.includes('Pièce(s)')) details.pieces = parseInt(text) || 0;
-              if (text.includes('Chambre(s)')) details.chambres = parseInt(text) || 0;
-              if (text.includes('Salle(s) de bain')) details.sdb = parseInt(text) || 0;
-              if (text.includes('Surface terrain')) {
-                const landSurface = parseInt(text.replace(/[^0-9]/g, ''));
-                if (!isNaN(landSurface)) details.landSurface = landSurface;
+            // Parcours des éléments d'information
+            infoItems.forEach((item, index) => {
+              const span = item.querySelector('span');
+              if (!span) return;
+              
+              const value = parseInt(span.textContent.trim()) || 0;
+              const text = item.textContent.trim().toLowerCase();
+              
+              // Selon la position et le contenu, on détermine le type d'information
+              if (index === 0 || text.includes('pces')) {
+                pieces = value;
+              } else if (index === 1 || text.includes('chb')) {
+                chambres = value;
+              } else if (index === 2 || text.includes('m²') || text.includes('m2')) {
+                surface = value;
               }
             });
-
+            
+            const bedrooms = chambres;
+            
+            // Extraction de la description complète
+            let description = '';
+            const descriptionContainer = document.querySelector('.cont-aside .content .ad-bar-cont-top');
+            if (descriptionContainer) {
+              let currentNode = descriptionContainer.nextElementSibling;
+              while (currentNode && !currentNode.classList?.contains('descriptions-legales')) {
+                if (currentNode.textContent && currentNode.textContent.trim() !== '') {
+                  description += (description ? '\n\n' : '') + currentNode.textContent.trim();
+                }
+                currentNode = currentNode.nextElementSibling;
+              }
+            }
+            
+            // Photos
+            const photos = Array.from(document.querySelectorAll('.gallery-top .swiper-slide img[src*="acheter-louer.fr"]'))
+              .map(img => img.src)
+              .filter((src, index, self) => self.indexOf(src) === index); // Éliminer les doublons
+            
+            // Construction de l'objet final avec les données extraites
             return {
-              title,
+              title: typeBien,
+              ville,
               price,
               surface,
-              landSurface: details.landSurface || null,
-              bedrooms: details.chambres || bedrooms,
-              pieces: details.pieces || bedrooms + 1, // On suppose que le nombre de pièces = chambres + séjour
-              sdb: details.sdb || 0,
+              bedrooms: bedrooms || 0,
+              pieces: pieces || 0,
               description,
-              location,
-              reference,
               photos,
               url: window.location.href,
               source: 'Acheter-louer',
@@ -174,7 +207,7 @@ export const acheterLouerScraper = async () => {
             await insertAnnonce({
               type: property.title.split(' ')[0] || 'Non spécifié',
               prix: property.price,
-              ville: property.location,
+              ville: property.ville,
               pieces: property.pieces,
               chambres: property.bedrooms,
               surface: property.surface,

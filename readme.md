@@ -36,6 +36,6 @@
 ⌛ BienIci  
 ⌛ PAP  
 ⌛ LogicImmo  
-⌛ acheter-louer.fr  
+✅ acheter-louer.fr  
 ⌛ proprietes-privees.com (pas de résultats pour l'instant)  
 ✅ immobilier.lefigaro.com  
