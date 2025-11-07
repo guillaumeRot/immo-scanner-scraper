@@ -35,7 +35,7 @@
 ⌛ OuestFranceImmo  
 ⌛ BienIci  
 ⌛ PAP  
-⌛ LogicImmo  
+✅ LogicImmo  
 ✅ acheter-louer.fr  
 ⌛ proprietes-privees.com (pas de résultats pour l'instant)  
 ✅ immobilier.lefigaro.com  
