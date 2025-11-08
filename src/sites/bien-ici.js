@@ -22,7 +22,7 @@ export const bienIciScraper = async () => {
     launchContext: {
       launcher: chromium,
       launchOptions: {
-        headless: false,
+        headless: true,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -69,12 +69,12 @@ export const bienIciScraper = async () => {
         log.info(`📌 Bien-ici - ${uniqueLinks.length} annonces uniques trouvées sur cette page.`);
 
         // Ajouter chaque lien dans la file pour traitement détaillé
-        // for (const url of uniqueLinks) {
-        //   await requestQueue.addRequest({ 
-        //     url, 
-        //     userData: { label: "DETAIL_PAGE" } 
-        //   });
-        // }
+        for (const url of uniqueLinks) {
+          await requestQueue.addRequest({ 
+            url, 
+            userData: { label: "DETAIL_PAGE" } 
+          });
+        }
 
         // Gestion de la pagination
         try {
@@ -115,7 +115,11 @@ export const bienIciScraper = async () => {
         try {
           log.info(`📄 Bien-ici - Page détail : ${request.url}`);
 
+          // await page.goto(request.url, { waitUntil: "domcontentloaded" });
           await page.goto(request.url, { waitUntil: "domcontentloaded" });
+
+          // Attendre que l'annonce soient chargées
+          await page.waitForSelector(".detailedSheetOtherInfo", { state: "attached", timeout: 20000 });
 
           // Extraction des informations principales
           const property = await page.evaluate(() => {
@@ -124,36 +128,58 @@ export const bienIciScraper = async () => {
               document.querySelector(selector)?.textContent.trim() || '';
             
             // Titre et type de bien
-            const titleElement = document.querySelector('.ad-overview-details__ad-title');
+            const titleElement = document.querySelector('.titleInside h1');
             const title = titleElement ? titleElement.textContent.trim() : 'Bien non spécifié';
+            const type = title.toLowerCase().includes('maison') ? 'Maison' : 
+                        title.toLowerCase().includes('appartement') ? 'Appartement' : 
+                        title.toLowerCase().includes('immeuble') ? 'Immeuble' : 'Autre';
             
             // Prix
             const priceText = cleanText('.ad-price__the-price');
             const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
             
             // Surface
-            const surfaceMatch = title.match(/(\d+)\s*m²/);
-            const surface = surfaceMatch ? parseInt(surfaceMatch[1]) : 0;
+            const surfaceElement = Array.from(document.querySelectorAll('.labelInfo span'))
+              .find(el => el.textContent.trim().endsWith('m²') && !el.textContent.includes('terrain'));
+            const surface = surfaceElement ? 
+              parseInt(surfaceElement.textContent.replace(/[^0-9]/g, '')) : 0;
+            
+            // Surface du terrain
+            const landSurfaceElement = Array.from(document.querySelectorAll('.labelInfo span'))
+              .find(el => el.textContent.trim().endsWith('m² de terrain'));
+            const landSurface = landSurfaceElement ? 
+              parseInt(landSurfaceElement.textContent.replace(/[^0-9]/g, '')) : 0;
             
             // Pièces
-            const piecesMatch = title.match(/(\d+)\s*pi[èe]ce/);
-            const pieces = piecesMatch ? parseInt(piecesMatch[1]) : 0;
+            const piecesElement = Array.from(document.querySelectorAll('.labelInfo span'))
+              .find(el => el.textContent.trim().endsWith('pièces'));
+            const pieces = piecesElement ? 
+              parseInt(piecesElement.textContent.replace(/[^0-9]/g, '')) : 0;
             
-            // Chambres (on suppose qu'il y a au moins une chambre de moins que le nombre de pièces)
-            const bedrooms = Math.max(1, pieces - 1);
+            // Chambres
+            const bedroomsElement = Array.from(document.querySelectorAll('.labelInfo span'))
+              .find(el => el.textContent.trim().endsWith('chambres'));
+            const bedrooms = bedroomsElement ? 
+              parseInt(bedroomsElement.textContent.replace(/[^0-9]/g, '')) : 0;
             
             // Description
-            const description = cleanText('.ad-overview-description');
+            const description = cleanText('.see-more-description');
             
-            // Localisation
-            const location = cleanText('.ad-overview-details__address-title') || '';
+            // Localisation (adresse complète)
+            const locationElement = document.querySelector('.titleInside .fullAddress');
+            const location = locationElement ? 
+              locationElement.textContent.trim().substring(5).trim() : '';
             
-            // Référence (on utilise l'ID de l'annonce)
-            const reference = window.location.href.split('/').pop() || '';
+            // Référence
+            const reference = document.querySelector('.labelInfo .hugeText')?.textContent
+              .replace('Réf. de l\'annonce : ', '') || '';
             
             // Photos
-            const photos = Array.from(document.querySelectorAll('.ad-overview-photo__image img'))
-              .map(img => img.src)
+            const photos = Array.from(document.querySelectorAll('.slideImg'))
+              .map(slide => {
+                const secondImg = slide.querySelector('img[src]:nth-child(2)');
+                return secondImg ? secondImg.src : null;
+              })
               .filter(src => src && src.includes('bienici.com'));
 
             // Extraction des détails supplémentaires
@@ -175,10 +201,11 @@ export const bienIciScraper = async () => {
 
             return {
               title,
+              type,
               price,
               surface,
-              landSurface: details.landSurface || null,
-              bedrooms: details.chambres || 0,
+              landSurface: landSurface || null,
+              bedrooms: bedrooms || 0,
               pieces: pieces || 0,
               sdb: details.sdb || 0,
               description,
@@ -206,25 +233,25 @@ export const bienIciScraper = async () => {
               lien: request.url,
             });
           } else {
-            log.warning(`⚠️ Diard - Données incomplètes pour ${request.url}`);
-            await insertErreur("Diard", request.url, "Données incomplètes");
+            log.warning(`⚠️ Bien-ici - Données incomplètes pour ${request.url}`);
+            await insertErreur("Bien-ici", request.url, "Données incomplètes");
           }
         } catch (err) {
-          log.error(`❌ Diard - Erreur sur la page ${request.url}`, { error: String(err) });
-          await insertErreur("Diard", request.url, String(err));
+          log.error(`❌ Bien-ici - Erreur sur la page ${request.url}`, { error: String(err) });
+          await insertErreur("Bien-ici", request.url, String(err));
         }
       }
     },
 
     failedRequestHandler({ request, log }) {
-      log.error(`🚨 Diard - Échec permanent pour ${request.url}`);
+      log.error(`🚨 Bien-ici - Échec permanent pour ${request.url}`);
     },
   });
 
   await crawler.run();
 
   // Nettoyer les annonces manquantes
-  await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
+  await deleteMissingAnnonces("Bien-ici", Array.from(new Set(liensActuels)));
 
-  console.log("✅ Diard - Scraping Diard terminé !");
+  console.log("✅ Bien-ici - Scraping Bien-ici terminé !");
 };
