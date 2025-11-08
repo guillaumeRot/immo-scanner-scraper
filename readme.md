@@ -33,7 +33,7 @@
 ⌛ Leboncoin  
 ⌛ SeLoger  
 ⌛ OuestFranceImmo  
-⌛ BienIci  
+✅ BienIci  
 ⌛ PAP (résultat des annonces bizarre)  
 ✅ LogicImmo  
 ✅ acheter-louer.fr  
