@@ -16,6 +16,7 @@ import { immobilierNotairesScraper } from './sites/immobilier-notaires.js';
 import { figaroImmobilierScraper } from './sites/immobilier-figaro.js';
 import { acheterLouerScraper } from './sites/acheter-louer.js';
 import { logicImmoScraper } from './sites/logic-immo.js';
+import { bienIciScraper } from './sites/bien-ici.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -73,6 +74,8 @@ app.get('/run-scrapers', async (req, res) => {
         await acheterLouerScraper();
       } else if (scraper === "logic-immo") {
         await logicImmoScraper();
+      } else if (scraper === "bien-ici") {
+        await bienIciScraper();
       // } else if (scraper === "fnaim") {
       //   await fnaimScraper();
       } else {
@@ -92,6 +95,7 @@ app.get('/run-scrapers', async (req, res) => {
         await figaroImmobilierScraper();
         await acheterLouerScraper();
         await logicImmoScraper();
+        await bienIciScraper();
         // await fnaimScraper();
       }
       

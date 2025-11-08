@@ -34,7 +34,7 @@
 ⌛ SeLoger  
 ⌛ OuestFranceImmo  
 ⌛ BienIci  
-⌛ PAP  
+⌛ PAP (résultat des annonces bizarre)  
 ✅ LogicImmo  
 ✅ acheter-louer.fr  
 ⌛ proprietes-privees.com (pas de résultats pour l'instant)  
