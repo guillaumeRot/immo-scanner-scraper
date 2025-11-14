@@ -30,7 +30,7 @@
 
 # Liste des sites d'annonces
 
-⌛ Leboncoin  
+⌛ Leboncoin(trop complexe de bypass les 403)  
 ⌛ SeLoger(trop complexe de bypass les 403)  
 🟠 OuestFranceImmo (assez long...)  
 ✅ BienIci  
