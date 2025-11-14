@@ -31,7 +31,7 @@
 # Liste des sites d'annonces
 
 ⌛ Leboncoin  
-⌛ SeLoger  
+⌛ SeLoger(trop complexe de bypass les 403)  
 🟠 OuestFranceImmo (assez long...)  
 ✅ BienIci  
 ⌛ PAP (résultat des annonces bizarre)  
