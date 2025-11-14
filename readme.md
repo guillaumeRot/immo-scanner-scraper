@@ -32,7 +32,7 @@
 
 ⌛ Leboncoin  
 ⌛ SeLoger  
-⌛ OuestFranceImmo  
+🟠 OuestFranceImmo (assez long...)  
 ✅ BienIci  
 ⌛ PAP (résultat des annonces bizarre)  
 ✅ LogicImmo  

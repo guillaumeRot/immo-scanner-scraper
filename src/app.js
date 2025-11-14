@@ -17,6 +17,7 @@ import { figaroImmobilierScraper } from './sites/immobilier-figaro.js';
 import { acheterLouerScraper } from './sites/acheter-louer.js';
 import { logicImmoScraper } from './sites/logic-immo.js';
 import { bienIciScraper } from './sites/bien-ici.js';
+import { ouestFranceScraper } from './sites/ouest-france.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -76,6 +77,8 @@ app.get('/run-scrapers', async (req, res) => {
         await logicImmoScraper();
       } else if (scraper === "bien-ici") {
         await bienIciScraper();
+      } else if (scraper === "ouest-france") {
+        await ouestFranceScraper();
       // } else if (scraper === "fnaim") {
       //   await fnaimScraper();
       } else {
@@ -96,6 +99,7 @@ app.get('/run-scrapers', async (req, res) => {
         await acheterLouerScraper();
         await logicImmoScraper();
         await bienIciScraper();
+        await ouestFranceScraper();
         // await fnaimScraper();
       }
       
