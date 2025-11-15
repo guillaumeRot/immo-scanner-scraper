@@ -159,9 +159,7 @@ export async function insertAnnonce(annonce) {
 
   // Formate le type s'il est présent
   if (annonce.type) {
-    console.log('annonce.type', annonce.type);
     annonce.type = formaterType(annonce.type);
-    console.log('annonce.type 2', annonce.type);
   }
 
   // Vérifie si la ville est une des villes supportées
