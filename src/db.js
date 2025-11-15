@@ -69,6 +69,25 @@ async function ensureTablesExists() {
 
   await client.query(createErrorTableQuery);
   console.log("✅ Table 'Erreur' vérifiée/créée");
+
+  const createScanTableQuery = `
+    CREATE TABLE IF NOT EXISTS "Scan" (
+      id SERIAL PRIMARY KEY,
+      scraper VARCHAR(100) NOT NULL,
+      date_scan TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      status VARCHAR(50) DEFAULT 'completed',
+      annonces_count INTEGER DEFAULT 0,
+      erreurs_count INTEGER DEFAULT 0,
+      duree_ms INTEGER,
+      UNIQUE(scraper)
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_scan_scraper ON "Scan"(scraper);
+    CREATE INDEX IF NOT EXISTS idx_scan_date ON "Scan"(date_scan);
+  `;
+
+  await client.query(createScanTableQuery);
+  console.log("✅ Table 'Scan' vérifiée/créée");
 }
 
 // Villes supportées avec leurs variantes
@@ -246,6 +265,48 @@ export async function deleteMissingAnnonces(agence, liensActuels) {
     await client.query(deleteQuery, values);
   } catch (err) {
     console.error("Erreur suppression annonces (pg):", err);
+  }
+}
+
+export async function updateScanTable(scraper, startTime) {
+  if (!client) throw new Error("Client non initialisé");
+
+  try {
+    const endTime = Date.now();
+    const duration = endTime - startTime;
+
+    // Compter le nombre d'annonces et d'erreurs pour ce scraper
+    const annoncesResult = await client.query(
+      'SELECT COUNT(*) as count FROM "Annonce" WHERE agence = $1 AND date_scraped >= $2',
+      [scraper, new Date(startTime).toISOString()]
+    );
+    const erreursResult = await client.query(
+      'SELECT COUNT(*) as count FROM "Erreur" WHERE scraper = $1 AND date_erreur >= $2',
+      [scraper, new Date(startTime).toISOString()]
+    );
+
+    const annoncesCount = parseInt(annoncesResult.rows[0].count);
+    const erreursCount = parseInt(erreursResult.rows[0].count);
+
+    // Upsert : insérer ou mettre à jour la ligne du scraper
+    const upsertQuery = `
+      INSERT INTO "Scan" (scraper, date_scan, status, annonces_count, erreurs_count, duree_ms)
+      VALUES ($1, NOW(), 'completed', $2, $3, $4)
+      ON CONFLICT (scraper) 
+      DO UPDATE SET 
+        date_scan = NOW(),
+        status = 'completed',
+        annonces_count = $2,
+        erreurs_count = $3,
+        duree_ms = $4
+    `;
+
+    await client.query(upsertQuery, [scraper, annoncesCount, erreursCount, duration]);
+    console.log(`✅ Table 'Scan' mise à jour pour ${scraper}: ${annoncesCount} annonces, ${erreursCount} erreurs, ${duration}ms`);
+
+  } catch (err) {
+    console.error(`❌ Erreur mise à jour table Scan pour ${scraper}:`, err);
+    throw err;
   }
 }
 

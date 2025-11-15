@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { closeDb, initDb } from './db.js';
+import { closeDb, initDb, updateScanTable } from './db.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper } from './sites/kermarrec.js';
 import { eraScraper } from './sites/era.js';
@@ -41,38 +41,54 @@ app.get('/run-scrapers', async (req, res) => {
 
     try {
       isScrapeRunning = true;
+      const startTime = Date.now();
       await initDb();
 
       if (scraper === "immonot") {
         await immonotScraper();
+        await updateScanTable("Immonot", startTime);
       } else if (scraper === "kermarrec") {
         await kermarrecScraper();
+        await updateScanTable("Kermarrec", startTime);
       } else if (scraper === "era") {
         await eraScraper();
+        await updateScanTable("ERA", startTime);
       } else if (scraper === "blot") {
         await blotScraper();
+        await updateScanTable("Blot", startTime);
       } else if (scraper === "carnot") {
         await carnotScraper();
+        await updateScanTable("Carnot", startTime);
       } else if (scraper === "diard") {
         await diardScraper();
+        await updateScanTable("Diard", startTime);
       } else if (scraper === "penn") {
         await pennScraper();
+        await updateScanTable("Penn", startTime);
       } else if (scraper === "century") {
         await centuryScraper();
+        await updateScanTable("Century 21", startTime);
       } else if (scraper === "bretilimmo") {
         await bretilimmoScraper();
+        await updateScanTable("Bretil'Immo", startTime);
       } else if (scraper === "boyer") {
         await boyerScraper();
+        await updateScanTable("Boyer Immobilier", startTime);
       } else if (scraper === "notaires-bretons") {
         await notairesBretonsScraper();
+        await updateScanTable("Notaires et Bretons", startTime);
       } else if (scraper === "immobilier-notaires") {
         await immobilierNotairesScraper();
+        await updateScanTable("Immobilier Notaires", startTime);
       } else if (scraper === "figaro-immobilier") {
         await figaroImmobilierScraper();
+        await updateScanTable("Figaro Immobilier", startTime);
       } else if (scraper === "acheter-louer") {
         await acheterLouerScraper();
+        await updateScanTable("Acheter-louer", startTime);
       } else if (scraper === "bien-ici") {
         await bienIciScraper();
+        await updateScanTable("Bien-ici", startTime);
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
@@ -90,6 +106,15 @@ app.get('/run-scrapers', async (req, res) => {
         await figaroImmobilierScraper();
         await acheterLouerScraper();
         await bienIciScraper();
+        
+        // Mise à jour pour le scan complet "all"
+        await updateScanTable("All", startTime);
+        
+        // Mise à jour individuelle de chaque scraper
+        const scrapers = ["Immonot", "Kermarrec", "ERA", "Blot", "Carnot", "Diard", "Penn", "Century 21", "Bretil'Immo", "Boyer Immobilier", "Notaires et Bretons", "Immobilier Notaires", "Figaro Immobilier", "Acheter-louer", "Bien-ici"];
+        for (const scraperName of scrapers) {
+          await updateScanTable(scraperName, startTime);
+        }
       }
       
       await closeDb();
