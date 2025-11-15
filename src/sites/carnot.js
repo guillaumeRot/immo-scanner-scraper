@@ -203,6 +203,7 @@ export const carnotScraper = async () => {
               agence: "Carnot",
               lien: request.url,
             });
+            liensActuels.push(request.url);
           } else {
             log.warning(`⚠️ Carnot - Données incomplètes pour ${request.url}`);
             await insertErreur("Carnot", request.url, "Données incomplètes");

@@ -385,6 +385,7 @@ export const figaroImmobilierScraper = async () => {
               agence: "Figaro Immobilier",
               lien: request.url,
             });
+            liensActuels.push(request.url);
           } else {
             log.warning(` Figaro Immobilier - Données incomplètes pour ${request.url}`);
             await insertErreur("Figaro Immobilier", request.url, "Données incomplètes");

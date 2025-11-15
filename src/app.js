@@ -15,9 +15,7 @@ import { notairesBretonsScraper } from './sites/notaires-bretons.js';
 import { immobilierNotairesScraper } from './sites/immobilier-notaires.js';
 import { figaroImmobilierScraper } from './sites/immobilier-figaro.js';
 import { acheterLouerScraper } from './sites/acheter-louer.js';
-import { logicImmoScraper } from './sites/logic-immo.js';
 import { bienIciScraper } from './sites/bien-ici.js';
-import { ouestFranceScraper } from './sites/ouest-france.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -73,14 +71,8 @@ app.get('/run-scrapers', async (req, res) => {
         await figaroImmobilierScraper();
       } else if (scraper === "acheter-louer") {
         await acheterLouerScraper();
-      } else if (scraper === "logic-immo") {
-        await logicImmoScraper();
       } else if (scraper === "bien-ici") {
         await bienIciScraper();
-      } else if (scraper === "ouest-france") {
-        await ouestFranceScraper();
-      // } else if (scraper === "fnaim") {
-      //   await fnaimScraper();
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
         await immonotScraper();
@@ -97,10 +89,7 @@ app.get('/run-scrapers', async (req, res) => {
         await immobilierNotairesScraper();
         await figaroImmobilierScraper();
         await acheterLouerScraper();
-        await logicImmoScraper();
         await bienIciScraper();
-        await ouestFranceScraper();
-        // await fnaimScraper();
       }
       
       await closeDb();

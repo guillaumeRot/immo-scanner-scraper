@@ -232,6 +232,7 @@ export const bienIciScraper = async () => {
               agence: "Bien-ici",
               lien: request.url,
             });
+            liensActuels.push(request.url);
           } else {
             log.warning(`⚠️ Bien-ici - Données incomplètes pour ${request.url}`);
             await insertErreur("Bien-ici", request.url, "Données incomplètes");

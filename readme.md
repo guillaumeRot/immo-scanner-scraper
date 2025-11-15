@@ -32,10 +32,10 @@
 
 ⌛ Leboncoin(trop complexe de bypass les 403)  
 ⌛ SeLoger(trop complexe de bypass les 403)  
-🟠 OuestFranceImmo (assez long...)  
+⌛ OuestFranceImmo (assez long...)  
 ✅ BienIci  
 ⌛ PAP (résultat des annonces bizarre)  
-✅ LogicImmo  
+✅ LogicImmo(a fonctionné mais retourne des 403 maintenant. Essayer en headful ?)  
 ✅ acheter-louer.fr  
 ⌛ proprietes-privees.com (pas de résultats pour l'instant)  
 ✅ immobilier.lefigaro.com  

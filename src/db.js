@@ -71,10 +71,59 @@ async function ensureTablesExists() {
   console.log("✅ Table 'Erreur' vérifiée/créée");
 }
 
+// Villes supportées avec leurs variantes
+export const VILLES = {
+  VITRE: {
+    nom: 'Vitré',
+    variantes: ['vitre', 'Vitré', 'VITRE']
+  },
+  CHATEAUGIRON: {
+    nom: 'Châteaugiron',
+    variantes: ['chateaugiron', 'Chateaugiron', 'CHATEAUGIRON', 'châteaugiron', 'Châteaugiron', 'CHÂTEAUGIRON']
+  }
+};
+
+/**
+ * Formate le nom de la ville si elle contient une des variantes supportées
+ * @param {string} ville - Le nom de la ville à formater (peut contenir d'autres informations comme le code postal)
+ * @returns {string} Le nom de la ville formaté ou la chaîne d'origine
+ */
+function formaterVille(ville) {
+  if (!ville) return ville;
+  
+  // Convertit la ville en minuscules pour une comparaison insensible à la casse
+  const villeNormalisee = ville.toLowerCase();
+  
+  // Vérifie chaque ville supportée
+  for (const [_, villeData] of Object.entries(VILLES)) {
+    // Vérifie si une des variantes est incluse dans la chaîne de la ville
+    const varianteTrouvee = villeData.variantes.some(variante => 
+      villeNormalisee.includes(variante.toLowerCase())
+    );
+    
+    if (varianteTrouvee) {
+      return villeData.nom;
+    }
+  }
+  return ville; // Retourne la ville inchangée si non reconnue
+}
+
 export async function insertAnnonce(annonce) {
   if (!client) throw new Error("Client non initialisé");
   if (!annonce.lien) {
     console.error("Annonce sans lien:", annonce);
+    return;
+  }
+  
+  // Formate la ville si elle est présente
+  if (annonce.ville) {
+    annonce.ville = formaterVille(annonce.ville);
+  }
+
+  // Vérifie si la ville est une des villes supportées
+  const villesSupportees = Object.values(VILLES).map(v => v.nom);
+  if (annonce.ville && !villesSupportees.includes(annonce.ville)) {
+    console.log(`Annonce ignorée - ville non supportée: ${annonce.ville}`);
     return;
   }
 
