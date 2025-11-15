@@ -216,6 +216,7 @@ export const acheterLouerScraper = async () => {
               agence: "Acheter-louer",
               lien: request.url,
             });
+            liensActuels.push(request.url);
           } else {
             log.warning(`⚠️ Acheter-louer - Données incomplètes pour ${request.url}`);
             await insertErreur("Acheter-louer", request.url, "Données incomplètes");

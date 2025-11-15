@@ -83,6 +83,18 @@ export const VILLES = {
   }
 };
 
+// Types de biens supportés avec leurs variantes
+export const TYPES = {
+  MAISON: {
+    nom: 'Maison',
+    variantes: ['maison', 'Maison', 'MAISON', 'Villa', 'VILLA', 'villa', 'propriété', 'Propriété', ' propriéte', 'Propriéte']
+  },
+  IMMEUBLE: {
+    nom: 'Immeuble',
+    variantes: ['immeuble', 'Immeuble', 'IMMEUBLE']
+  }
+};
+
 /**
  * Formate le nom de la ville si elle contient une des variantes supportées
  * @param {string} ville - Le nom de la ville à formater (peut contenir d'autres informations comme le code postal)
@@ -108,6 +120,31 @@ function formaterVille(ville) {
   return ville; // Retourne la ville inchangée si non reconnue
 }
 
+/**
+ * Formate le type du bien s'il contient une des variantes supportées
+ * @param {string} type - Le type du bien à formater
+ * @returns {string} Le type formaté ou la chaîne d'origine
+ */
+function formaterType(type) {
+  if (!type) return type;
+  
+  // Convertit le type en minuscules pour une comparaison insensible à la casse
+  const typeNormalise = type.toLowerCase();
+  
+  // Vérifie chaque type supporté
+  for (const [_, typeData] of Object.entries(TYPES)) {
+    // Vérifie si une des variantes est incluse dans la chaîne du type
+    const varianteTrouvee = typeData.variantes.some(variante => 
+      typeNormalise.includes(variante.toLowerCase())
+    );
+    
+    if (varianteTrouvee) {
+      return typeData.nom;
+    }
+  }
+  return type; // Retourne le type inchangé si non reconnu
+}
+
 export async function insertAnnonce(annonce) {
   if (!client) throw new Error("Client non initialisé");
   if (!annonce.lien) {
@@ -120,10 +157,24 @@ export async function insertAnnonce(annonce) {
     annonce.ville = formaterVille(annonce.ville);
   }
 
+  // Formate le type s'il est présent
+  if (annonce.type) {
+    console.log('annonce.type', annonce.type);
+    annonce.type = formaterType(annonce.type);
+    console.log('annonce.type 2', annonce.type);
+  }
+
   // Vérifie si la ville est une des villes supportées
   const villesSupportees = Object.values(VILLES).map(v => v.nom);
   if (annonce.ville && !villesSupportees.includes(annonce.ville)) {
     console.log(`Annonce ignorée - ville non supportée: ${annonce.ville}`);
+    return;
+  }
+
+  // Vérifie si le type est un des types supportés
+  const typesSupportes = Object.values(TYPES).map(t => t.nom);
+  if (annonce.type && !typesSupportes.includes(annonce.type)) {
+    console.log(`Annonce ignorée - type non supporté: ${annonce.type}`);
     return;
   }
 

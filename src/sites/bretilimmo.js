@@ -76,7 +76,6 @@ export const bretilimmoScraper = async () => {
 
         // Ajouter chaque lien dans la file pour traitement détaillé
         for (const url of uniqueLinks) {
-          liensActuels.push(url);
           await requestQueue.addRequest({ 
             url, 
             userData: { label: "DETAIL_PAGE" } 
@@ -183,6 +182,7 @@ export const bretilimmoScraper = async () => {
               agence: "Bretil'Immo",
               lien: request.url,
             });
+            liensActuels.push(request.url);
           } else {
             log.warning(`⚠️ Bretil'Immo - Données incomplètes pour ${request.url}`);
             await insertErreur("Bretil'Immo", request.url, "Données incomplètes");

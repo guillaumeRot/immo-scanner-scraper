@@ -268,26 +268,12 @@ export const figaroImmobilierScraper = async () => {
           const titleElement = await page.$('.classified-main-infos-title h1');
           const titleText = titleElement ? (await titleElement.textContent()).toLowerCase() : '';
           
-          let type = 'Autre';
-          if (titleText.includes('maison')) {
-            type = 'Maison';
-          } else if (titleText.includes('appartement')) {
-            type = 'Appartement';
-          } else if (titleText.includes('immeuble')) {
-            type = 'Immeuble';
-          } else if (titleText.includes('terrain')) {
-            type = 'Terrain';
-          } else if (titleText.includes('local') || titleText.includes('bureau')) {
-            type = 'Local professionnel';
-          }
-          
           // Extraction de la ville depuis le h1 > span (format: "à NomDeLaVille (CodePostal)")
           const locationElement = await page.$('h1#classified-main-infos span');
           const locationText = locationElement ? (await locationElement.textContent()).trim() : '';
           // On extrait le texte après "à " et avant la parenthèse
           const locationMatch = locationText.match(/à\s+(.+?)(?=\s*\()/);
           const propertyLocation = locationMatch ? locationMatch[1].trim() : '';
-          const title = `${type} à ${propertyLocation}`;
           
           // Prix
           const priceElement = await page.$('.classified-price__detail .classified-price-per-m2 strong');
@@ -355,7 +341,7 @@ export const figaroImmobilierScraper = async () => {
 
           // Construire l'objet property
           const property = {
-            title,
+            titleText,
             price,
             surface,
             landSurface: details.landSurface || null,
@@ -372,9 +358,9 @@ export const figaroImmobilierScraper = async () => {
           };
           
           // Vérifier les données et insérer dans la base de données
-          if (property.title && property.price) {
+          if (property.titleText && property.price) {
             await insertAnnonce({
-              type: property.title.split(' ')[0] || 'Non spécifié',
+              type: property.titleText,
               prix: property.price,
               ville: property.location,
               pieces: property.pieces,

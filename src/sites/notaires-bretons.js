@@ -63,10 +63,6 @@ export const notairesBretonsScraper = async () => {
         
         // Ajouter chaque annonce dans la file pour traitement détaillé
         for (const annonceUrl of uniqueLinks) {
-          if (liensActuels.includes(annonceUrl)) continue; // Éviter les doublons
-          
-          liensActuels.push(annonceUrl);
-          
           await requestQueue.addRequest({ 
             url: annonceUrl, 
             userData: { label: "DETAIL_PAGE" } 
@@ -118,12 +114,6 @@ export const notairesBretonsScraper = async () => {
             
             // Surface du terrain
             const landSurface = getFieldValue('field-land-space');
-            
-            // Nombre de pièces
-            const pieces = getFieldValue('field-rooms-number');
-            
-            // Nombre de chambres
-            const chambres = getFieldValue('field-bedrooms-number');
 
             // Photos - Récupération depuis le carrousel
             const photos = Array.from(document.querySelectorAll('.owl-stage .owl-item img[src*="/property/"]')).map(img => {
@@ -161,8 +151,8 @@ export const notairesBretonsScraper = async () => {
               type,
               price,
               surface,
-              landSurface: landSurface,
-              bedrooms: bedrooms,
+              landSurface,
+              bedrooms,
               pieces: bedrooms + 1, // On suppose que le nombre de pièces = chambres + séjour
               sdb: sdb,
               description,
@@ -188,6 +178,7 @@ export const notairesBretonsScraper = async () => {
               agence: "Notaires et Bretons",
               lien: request.url,
             });
+            liensActuels.push(request.url);
           } else {
             log.warning(`⚠️ Notaires Bretons - Données incomplètes pour ${request.url}`);
             await insertErreur("Notaires et Bretons", request.url, "Données incomplètes");

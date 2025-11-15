@@ -175,7 +175,7 @@ export const kermarrecScraper = async () => {
               agence: "Kermarrec",
               lien: request.url,
             });
-
+            liensActuels.push(request.url);
           } else {
             log.warning(`⚠️ Kermarrec - Données incomplètes pour ${request.url} (ville ou prix manquant)`);
             await insertErreur("Kermarrec", request.url, "Données incomplètes (ville ou prix manquant)");

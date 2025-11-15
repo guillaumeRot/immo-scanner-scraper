@@ -221,7 +221,7 @@ export const bienIciScraper = async () => {
           // Vérifier les données et insérer dans la base de données
           if (property.title && property.price) {
             await insertAnnonce({
-              type: property.title.split(' ')[0] || 'Non spécifié',
+              type: property.type,
               prix: property.price,
               ville: property.location,
               pieces: property.pieces,
