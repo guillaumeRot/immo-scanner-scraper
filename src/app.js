@@ -91,7 +91,7 @@ app.get('/run-scrapers', async (req, res) => {
         await updateScanTable("Bien-ici", startTime);
       } else {
         // Si aucun paramètre ou valeur inconnue, tu lances les deux
-        await immonotScraper();
+        // await immonotScraper();
         await kermarrecScraper();
         await eraScraper();
         await blotScraper();

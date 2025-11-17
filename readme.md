@@ -24,7 +24,7 @@
 
 # Liste des sites de notaires
 
-✅ Immonot: Vitré / Chateaugiron  
+⌛ Immonot: Vitré / Chateaugiron (prend toutes villes lors du scrap complet)  
 ✅ Notaires et bretons  
 ✅ immobilier.notaires.fr
 
@@ -35,6 +35,7 @@
 ⌛ OuestFranceImmo (assez long...)  
 ✅ BienIci  
 ⌛ PAP (résultat des annonces bizarre)  
+
 ✅ LogicImmo(a fonctionné mais retourne des 403 maintenant. Essayer en headful ?)  
 ✅ acheter-louer.fr  
 ⌛ proprietes-privees.com (pas de résultats pour l'instant)  

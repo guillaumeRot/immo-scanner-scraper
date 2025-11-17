@@ -43,6 +43,11 @@ async function ensureTablesExists() {
       description TEXT,
       photos JSON,
       agence VARCHAR(100) NOT NULL,
+      nb_t1 INTEGER DEFAULT 0,
+      nb_t2 INTEGER DEFAULT 0,
+      nb_t3 INTEGER DEFAULT 0,
+      nb_t4 INTEGER DEFAULT 0,
+      nb_t5 INTEGER DEFAULT 0,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       date_scraped TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -164,6 +169,96 @@ function formaterType(type) {
   return type; // Retourne le type inchangé si non reconnu
 }
 
+function extractMultipleUnits(description) {
+  const text = description.toLowerCase();
+
+  // Conversion des nombres écrits en lettres → entiers
+  const numberWords = {
+    "un": 1, "une": 1,
+    "deux": 2,
+    "trois": 3,
+    "quatre": 4,
+    "cinq": 5,
+    "six": 6,
+    "sept": 7,
+    "huit": 8,
+    "neuf": 9,
+    "dix": 10
+  };
+
+  const results = {};
+
+  // Regex générique :
+  // - (1, 2, trois, etc.)
+  // - suivi de (studio|t1|t2|t3|f2|f3|2 pièces, etc.)
+  const regex = /\b(\d+|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*(appartements?\s*)?(studio|t\s*1|t\s*2|t\s*3|t\s*4|f\s*1|f\s*2|f\s*3|f\s*4|\d+\s*pi[eè]ces?)\b/g;
+
+  let match;
+  while ((match = regex.exec(text)) !== null) {
+    let quantity = match[1];
+    let typeRaw = match[3]; // Le type est maintenant dans match[3] à cause du groupe "appartements?"
+
+    // Convertir le nombre
+    if (isNaN(quantity)) {
+      quantity = numberWords[quantity] || 1;
+    } else {
+      quantity = parseInt(quantity, 10);
+    }
+
+    // Normaliser le type
+    let type = typeRaw
+      .replace(/\s+/g, "")   // enlever espaces (t 2 → t2)
+      .replace(/f/i, "t");   // f2 → t2
+
+    if (type.includes("pièce")) {
+      // "2 pièces" → T2
+      const n = parseInt(type, 10);
+      type = `t${n}`;
+    }
+
+    if (type === "studio") type = "Studio";
+    else type = type.toUpperCase(); // T2, T3...
+
+    // Stocker
+    results[type] = (results[type] || 0) + quantity;
+  }
+
+  return results;
+}
+
+function extractHouseRooms(description) {
+  const text = description.toLowerCase();
+
+  // 1. Détection "X pièces"
+  const matchPieces = text.match(/(\d+)\s*(pi[eè]ces?)/);
+  if (matchPieces) {
+    return parseInt(matchPieces[1], 10);
+  }
+
+  // 2. Détection Tn / Fn
+  const matchT = text.match(/\b[tf]\s*([1-9])\b/);
+  if (matchT) {
+    return parseInt(matchT[1], 10);
+  }
+
+  // 3. Déduction : "X chambres" + 1 pièce de vie
+  const matchBedrooms = text.match(/(\d+)\s*chambres?/);
+  if (matchBedrooms) {
+    const bedrooms = parseInt(matchBedrooms[1], 10);
+    // Hypothèse standard : 1 salon/séjour
+    return bedrooms + 1;
+  }
+
+  // 4. Détection qualitative (ex: "maison familiale 6 pièces")
+  const matchAfterMaison = text.match(/maison[^0-9]*?(\d+)\s*pi[eè]ces/);
+  if (matchAfterMaison) {
+    return parseInt(matchAfterMaison[1], 10);
+  }
+
+  // Si rien trouvé
+  return null; // inconnu
+}
+
 export async function insertAnnonce(annonce) {
   if (!client) throw new Error("Client non initialisé");
   if (!annonce.lien) {
@@ -195,10 +290,28 @@ export async function insertAnnonce(annonce) {
     return;
   }
 
+  // Extraire les informations sur les pièces selon le type de bien
+  if (annonce.type && annonce.description) {
+    if (annonce.type === 'Immeuble') {
+      // Pour les immeubles, utiliser extractMultipleUnits
+      const units = extractMultipleUnits(annonce.description);
+      annonce.nb_t1 = units.T1 || 0;
+      annonce.nb_t2 = units.T2 || 0;
+      annonce.nb_t3 = units.T3 || 0;
+      annonce.nb_t4 = units.T4 || 0;
+      annonce.nb_t5 = units.T5 || 0;
+      annonce.nb_pieces = 0; // Pour les immeubles, nb_pieces reste à 0
+    } else if (annonce.type === 'Maison' && annonce.pieces == 0) {
+      // Pour les maisons, utiliser extractHouseRooms
+      const rooms = extractHouseRooms(annonce.description);
+      annonce.pieces = rooms || 0;
+    }
+  }
+
   try {
     const upsertQuery = `
-      INSERT INTO "Annonce" (type, prix, ville, pieces, surface, lien, agence, description, photos, created_at, date_scraped)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, NOW(), NOW())
+      INSERT INTO "Annonce" (type, prix, ville, pieces, surface, lien, agence, description, photos, nb_t1, nb_t2, nb_t3, nb_t4, nb_t5, created_at, date_scraped)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
       ON CONFLICT (lien)
       DO UPDATE SET
         type = EXCLUDED.type,
@@ -209,6 +322,11 @@ export async function insertAnnonce(annonce) {
         agence = EXCLUDED.agence,
         description = EXCLUDED.description,
         photos = EXCLUDED.photos,
+        nb_t1 = EXCLUDED.nb_t1,
+        nb_t2 = EXCLUDED.nb_t2,
+        nb_t3 = EXCLUDED.nb_t3,
+        nb_t4 = EXCLUDED.nb_t4,
+        nb_t5 = EXCLUDED.nb_t5,
         date_scraped = NOW()
     `;
 
@@ -222,6 +340,11 @@ export async function insertAnnonce(annonce) {
       annonce.agence,
       annonce.description || null,
       annonce.photos ? JSON.stringify(annonce.photos) : null,
+      annonce.nb_t1,
+      annonce.nb_t2,
+      annonce.nb_t3,
+      annonce.nb_t4,
+      annonce.nb_t5
     ];
 
     await client.query(upsertQuery, values);
