@@ -154,6 +154,20 @@ export const eraScraper = async () => {
                 .join(' ')
             };
 
+            // DPE - Récupérer la classe qui a l'attribut "on"
+            let dpe = null;
+            const dpeElement = document.querySelector('.performance.dpe li.on');
+            if (dpeElement) {
+              dpe = dpeElement.textContent.trim();
+            }
+
+            // GES - Récupérer la classe qui a l'attribut "on"
+            let ges = null;
+            const gesElement = document.querySelector('.performance.ges li.on');
+            if (gesElement) {
+              ges = gesElement.textContent.trim();
+            }
+
             return {
               title,
               type,
@@ -167,6 +181,8 @@ export const eraScraper = async () => {
               images,
               reference,
               agency,
+              dpe,
+              ges,
               url: window.location.href,
               source: 'ERA Immobilier',
               dateScraped: new Date().toISOString()
@@ -190,7 +206,9 @@ export const eraScraper = async () => {
                 photos: property.images,
                 agence: "ERA",
                 lien: request.url,
-                reference: property.reference
+                reference: property.reference,
+                dpe: property.dpe,
+                ges: property.ges
               });
 
               liensActuels.push(request.url);
