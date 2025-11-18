@@ -212,6 +212,30 @@ export const blotScraper = async () => {
                 }
             });
 
+            // Extraction du DPE depuis la classe CSS energy-realty__graph--dpe
+            let dpe = "";
+            const dpeElement = document.querySelector('.energy-realty__graph--dpe');
+            if (dpeElement) {
+                // Récupérer toutes les classes et trouver celle qui correspond au pattern energy-realty__graph--[LETTER]
+                const classes = dpeElement.className.split(' ');
+                const dpeClass = classes.find(cls => cls.match(/energy-realty__graph--[A-Z]$/));
+                if (dpeClass) {
+                    dpe = dpeClass.slice(-1); // Prendre la dernière lettre
+                }
+            }
+
+            // Extraction du GES depuis la classe CSS energy-realty__graph--ges
+            let ges = "";
+            const gesElement = document.querySelector('.energy-realty__graph--ges');
+            if (gesElement) {
+                // Récupérer toutes les classes et trouver celle qui correspond au pattern energy-realty__graph--[LETTER]
+                const classes = gesElement.className.split(' ');
+                const gesClass = classes.find(cls => cls.match(/energy-realty__graph--[A-Z]$/));
+                if (gesClass) {
+                    ges = gesClass.slice(-1); // Prendre la dernière lettre
+                }
+            }
+
             return { 
               title: features.type, 
               price,
@@ -220,6 +244,8 @@ export const blotScraper = async () => {
               desc: description,
               features,
               images,
+              dpe,
+              ges,
               // Pour rétrocompatibilité
               photos: images,
               nbPieces: features.nbPieces,
@@ -236,6 +262,8 @@ export const blotScraper = async () => {
               surface: annonce.surface,
               description: annonce.desc,
               photos: annonce.photos,
+              dpe: annonce.dpe,
+              ges: annonce.ges,
               agence: "Blot",
               lien: request.url,
             });
