@@ -150,6 +150,28 @@ export const bretilimmoScraper = async () => {
                 .join('\n\n') 
               : '';
             
+            // Diagnostic énergétique - récupérer la lettre depuis le nom de la classe après "number"
+            const diagnosticDiagram = document.querySelector('.diagnostic-dpe .diagnostic-diagram');
+            let diagnosticLetter = '';
+            if (diagnosticDiagram) {
+              const className = diagnosticDiagram.className;
+              const numberMatch = className.match(/number(\w)/);
+              if (numberMatch) {
+                diagnosticLetter = numberMatch[1];
+              }
+            }
+            
+            // Diagnostic GES - récupérer la lettre depuis le nom de la classe après "number"
+            const gesDiagram = document.querySelector('.emission-ges .emission-diagram');
+            let gesLetter = '';
+            if (gesDiagram) {
+              const className = gesDiagram.className;
+              const numberMatch = className.match(/number(\w)/);
+              if (numberMatch) {
+                gesLetter = numberMatch[1];
+              }
+            }
+            
 
             return {
               type,
@@ -162,6 +184,8 @@ export const bretilimmoScraper = async () => {
               description,
               city,
               photos,
+              diagnosticLetter,
+              gesLetter,
               url: window.location.href,
               source: 'Bretil\'Immo',
               timestamp: new Date().toISOString()
@@ -181,6 +205,8 @@ export const bretilimmoScraper = async () => {
               photos: property.photos,
               agence: "Bretil'Immo",
               lien: request.url,
+              dpe: property.diagnosticLetter,
+              ges: property.gesLetter,
             });
             liensActuels.push(request.url);
           } else {
