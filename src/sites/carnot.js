@@ -151,13 +151,17 @@ export const carnotScraper = async () => {
               ?.parentElement?.querySelector('.value')?.textContent.trim() || '0';
             const fees = parseFloat(feesText) || 0;
 
-            // DPE
-            const dpeText = document.querySelector('#bloc-energies #dpe .details-dpe .detail-infos strong')?.textContent.trim() || '';
-            const dpe = dpeText ? parseInt(dpeText) : null;
+            // DPE - prendre la lettre après "dpe-" dans la classe "details-dpe"
+            const dpeElement = document.querySelector('#bloc-energies #dpe .details-dpe');
+            const dpeClass = dpeElement?.className || '';
+            const dpeMatch = dpeClass.match(/dpe-([A-G])/);
+            const dpe = dpeMatch ? dpeMatch[1] : null;
             
-            // GES
-            const gesText = document.querySelector('#bloc-energies #ges .details-ges .detail-infos strong')?.textContent.trim() || '';
-            const ges = gesText ? parseInt(gesText) : null;
+            // GES - prendre la lettre après "ges-" dans la classe "details-ges"
+            const gesElement = document.querySelector('#bloc-energies #ges .details-ges');
+            const gesClass = gesElement?.className || '';
+            const gesMatch = gesClass.match(/ges-([A-G])/);
+            const ges = gesMatch ? gesMatch[1] : null;
 
             // Photos
             const photos = Array.from(document.querySelectorAll('.inspiry_property_masonry_style a[data-fancybox="gallery"]'))
@@ -202,6 +206,8 @@ export const carnotScraper = async () => {
               photos: property.photos,
               agence: "Carnot",
               lien: request.url,
+              dpe: property.dpe,
+              ges: property.ges
             });
             liensActuels.push(request.url);
           } else {
