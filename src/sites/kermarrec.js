@@ -109,7 +109,7 @@ export const kermarrecScraper = async () => {
                 return clone.textContent.trim().replace(/^[\s\n]+|[\s\n]+$/g, '');
               }, element);
             } catch (e) {
-              log.warn(`⚠️ Erreur lors de l'extraction: ${e.message}`);
+              log.warning(`⚠️ Erreur lors de l'extraction: ${e.message}`);
               return '';
             }
           };
@@ -131,7 +131,7 @@ export const kermarrecScraper = async () => {
               }, prixElement);
             }
           } catch (e) {
-            log.warn(`⚠️ Impossible d'extraire le prix: ${e.message}`);
+            log.warning(`⚠️ Impossible d'extraire le prix: ${e.message}`);
           }
 
           // Extraire la surface (en m²)
@@ -154,13 +154,33 @@ export const kermarrecScraper = async () => {
               el => el.textContent?.trim() || ''
             );
           } catch (e) {
-            log.warn(`⚠️ Impossible d'extraire la description: ${e.message}`);
+            log.warning(`⚠️ Impossible d'extraire la description: ${e.message}`);
           }
 
           // Récupérer les photos
           const photos = await page.$$eval('.entry-medias img', 
             imgs => imgs.map(img => img.src).filter(src => src)
           );
+
+          // Récupérer le DPE (lettre de performance énergétique)
+          let dpe = '';
+          try {
+            dpe = await page.$eval('.emission-diagram .diag_selected .diag_letter', 
+              el => el.textContent?.trim() || ''
+            );
+          } catch (e) {
+            log.warning(`⚠️ Impossible d'extraire le DPE: ${e.message}`);
+          }
+
+          // Récupérer le GES (émissions de CO2)
+          let ges = '';
+          try {
+            ges = await page.$eval('.diag_ges .diag_selected .diag_letter', 
+              el => el.textContent?.trim() || ''
+            );
+          } catch (e) {
+            log.warning(`⚠️ Impossible d'extraire le GES: ${e.message}`);
+          }
 
           if (ville && prix) {
             await insertAnnonce({
@@ -172,6 +192,8 @@ export const kermarrecScraper = async () => {
               surface: parseFloat(surface) || 0,
               description: description,
               photos: photos,
+              dpe: dpe,
+              ges: ges,
               agence: "Kermarrec",
               lien: request.url,
             });

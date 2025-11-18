@@ -48,6 +48,8 @@ async function ensureTablesExists() {
       nb_t3 INTEGER DEFAULT 0,
       nb_t4 INTEGER DEFAULT 0,
       nb_t5 INTEGER DEFAULT 0,
+      dpe VARCHAR(1),
+      ges VARCHAR(1),
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       date_scraped TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
@@ -188,15 +190,16 @@ function extractMultipleUnits(description) {
 
   const results = {};
 
-  // Regex générique :
-  // - (1, 2, trois, etc.)
-  // - suivi de (studio|t1|t2|t3|f2|f3|2 pièces, etc.)
-  const regex = /\b(\d+|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*(appartements?\s*)?(studio|t\s*1|t\s*2|t\s*3|t\s*4|f\s*1|f\s*2|f\s*3|f\s*4|\d+\s*pi[eè]ces?)\b/g;
+  // Regex améliorée pour capturer différentes formulations
+  // - (1, 2, trois, etc.) suivi de types divers
+  // - Supporte "appartement T2", "T3", "2 pièces", "studio", "F2", etc.
+  // - Capture aussi les formulations comme "comprendant un appartement de type T3"
+  const regex = /\b(\d+|un|une|deux|trois|quatre|cinq|six|sept|huit|neuf|dix)\s*(appartements?\s*)?(studio|t\s*1|t\s*2|t\s*3|t\s*4|t\s*5|t\s*6|f\s*1|f\s*2|f\s*3|f\s*4|f\s*5|f\s*6|\d+\s*pi[eè]ces?|type\s*t\s*[1-6]|duplex)\b/g;
 
   let match;
   while ((match = regex.exec(text)) !== null) {
     let quantity = match[1];
-    let typeRaw = match[3]; // Le type est maintenant dans match[3] à cause du groupe "appartements?"
+    let typeRaw = match[3]; // Le type est dans match[3]
 
     // Convertir le nombre
     if (isNaN(quantity)) {
@@ -208,7 +211,8 @@ function extractMultipleUnits(description) {
     // Normaliser le type
     let type = typeRaw
       .replace(/\s+/g, "")   // enlever espaces (t 2 → t2)
-      .replace(/f/i, "t");   // f2 → t2
+      .replace(/f/i, "t")    // f2 → t2
+      .replace(/type/i, ""); // type t2 → t2
 
     if (type.includes("pièce")) {
       // "2 pièces" → T2
@@ -216,11 +220,39 @@ function extractMultipleUnits(description) {
       type = `t${n}`;
     }
 
-    if (type === "studio") type = "Studio";
+    if (type === "studio" || type === "duplex") type = "T1";
     else type = type.toUpperCase(); // T2, T3...
 
     // Stocker
     results[type] = (results[type] || 0) + quantity;
+  }
+
+  // Deuxième passe: chercher les appartements sans nombre explicite (ex: "un appartement T3")
+  const singleUnitRegex = /\b(appartement|logement|studio)\s*(de\s*type\s*)?(t\s*[1-6]|f\s*[1-6]|duplex)\b/g;
+  while ((match = singleUnitRegex.exec(text)) !== null) {
+    let typeRaw = match[3] || match[2]; // T3 ou F2
+    let type = typeRaw
+      .replace(/\s+/g, "")
+      .replace(/f/i, "t");
+    
+    if (type === "studio" || type === "duplex") type = "Studio";
+    else type = type.toUpperCase();
+
+    results[type] = (results[type] || 0) + 1;
+  }
+
+  // Troisième passe: chercher "T2", "T3" etc. seuls (sans nombre)
+  const simpleTypeRegex = /\b(t\s*[1-6]|f\s*[1-6]|studio|duplex)\b/g;
+  while ((match = simpleTypeRegex.exec(text)) !== null) {
+    let typeRaw = match[1];
+    let type = typeRaw
+      .replace(/\s+/g, "")
+      .replace(/f/i, "t");
+    
+    if (type === "studio" || type === "duplex") type = "Studio";
+    else type = type.toUpperCase();
+
+    results[type] = (results[type] || 0) + 1;
   }
 
   return results;
@@ -310,8 +342,8 @@ export async function insertAnnonce(annonce) {
 
   try {
     const upsertQuery = `
-      INSERT INTO "Annonce" (type, prix, ville, pieces, surface, lien, agence, description, photos, nb_t1, nb_t2, nb_t3, nb_t4, nb_t5, created_at, date_scraped)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, NOW(), NOW())
+      INSERT INTO "Annonce" (type, prix, ville, pieces, surface, lien, agence, description, photos, nb_t1, nb_t2, nb_t3, nb_t4, nb_t5, dpe, ges, created_at, date_scraped)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
       ON CONFLICT (lien)
       DO UPDATE SET
         type = EXCLUDED.type,
@@ -327,6 +359,8 @@ export async function insertAnnonce(annonce) {
         nb_t3 = EXCLUDED.nb_t3,
         nb_t4 = EXCLUDED.nb_t4,
         nb_t5 = EXCLUDED.nb_t5,
+        dpe = EXCLUDED.dpe,
+        ges = EXCLUDED.ges,
         date_scraped = NOW()
     `;
 
@@ -344,7 +378,9 @@ export async function insertAnnonce(annonce) {
       annonce.nb_t2,
       annonce.nb_t3,
       annonce.nb_t4,
-      annonce.nb_t5
+      annonce.nb_t5,
+      annonce.dpe || null,
+      annonce.ges || null
     ];
 
     await client.query(upsertQuery, values);
