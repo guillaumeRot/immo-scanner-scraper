@@ -153,6 +153,46 @@ export const diardScraper = async () => {
               })
               .filter(Boolean);
 
+            // Extraction DPE - prendre la lettre qui suit le path avec stroke
+            let dpeLetter = '';
+            const dpeElement = document.querySelector('#dpe svg');
+            if (dpeElement) {
+              const pathWithStroke = dpeElement.querySelector('path[stroke]');
+              if (pathWithStroke) {
+                // Chercher le texte qui suit ce path dans le SVG
+                const pathIndex = Array.from(dpeElement.children).indexOf(pathWithStroke);
+                
+                // Prendre le premier texte après le path
+                for (let i = pathIndex + 1; i < dpeElement.children.length; i++) {
+                  const element = dpeElement.children[i];
+                  if (element.tagName === 'text' && element.textContent.trim().match(/^[A-G]$/)) {
+                    dpeLetter = element.textContent.trim();
+                    break;
+                  }
+                }
+              }
+            }
+
+            // Extraction GES - prendre la lettre qui suit le path avec stroke
+            let gesLetter = '';
+            const gesElement = document.querySelector('#ges svg');
+            if (gesElement) {
+              const pathWithStroke = gesElement.querySelector('path[stroke]');
+              if (pathWithStroke) {
+                // Chercher le texte qui suit ce path dans le SVG
+                const pathIndex = Array.from(gesElement.children).indexOf(pathWithStroke);
+                
+                // Prendre le premier texte après le path
+                for (let i = pathIndex + 1; i < gesElement.children.length; i++) {
+                  const element = gesElement.children[i];
+                  if (element.tagName === 'text' && element.textContent.trim().match(/^[A-G]$/)) {
+                    gesLetter = element.textContent.trim();
+                    break;
+                  }
+                }
+              }
+            }
+
             // Extraction des détails supplémentaires
             const details = {};
             document.querySelectorAll('.field--name-field-realty-features .field__item').forEach(item => {
@@ -178,6 +218,8 @@ export const diardScraper = async () => {
               location,
               reference,
               photos,
+              dpe: dpeLetter,
+              ges: gesLetter,
               url: window.location.href,
               source: 'Diard Immobilier',
               timestamp: new Date().toISOString()
@@ -195,6 +237,8 @@ export const diardScraper = async () => {
               surface: property.surface,
               description: property.description,
               photos: property.photos,
+              dpe: property.dpe,
+              ges: property.ges,
               agence: "Diard",
               lien: request.url,
             });
