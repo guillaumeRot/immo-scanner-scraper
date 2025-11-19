@@ -105,7 +105,7 @@ app.get('/run-scrapers', async (req, res) => {
         await immobilierNotairesScraper();
         await figaroImmobilierScraper();
         await acheterLouerScraper();
-        await bienIciScraper();
+        // await bienIciScraper();
         
         // Mise à jour pour le scan complet "all"
         await updateScanTable("All", startTime);

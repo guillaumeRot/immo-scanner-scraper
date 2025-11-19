@@ -174,6 +174,14 @@ export const bienIciScraper = async () => {
             const reference = document.querySelector('.labelInfo .hugeText')?.textContent
               .replace('Réf. de l\'annonce : ', '') || '';
             
+            // DPE
+            const dpeElement = document.querySelector('.dpe-line__classification > span > div:first-child');
+            const dpe = dpeElement ? dpeElement.textContent.trim() : '';
+            
+            // GES
+            const gesElement = document.querySelector('.ges-line__classification span');
+            const ges = gesElement ? gesElement.textContent.trim() : '';
+            
             // Photos
             const photos = Array.from(document.querySelectorAll('.slideImg'))
               .map(slide => {
@@ -208,6 +216,8 @@ export const bienIciScraper = async () => {
               bedrooms: bedrooms || 0,
               pieces: pieces || 0,
               sdb: details.sdb || 0,
+              dpe,
+              ges,
               description,
               location,
               reference,
@@ -231,6 +241,8 @@ export const bienIciScraper = async () => {
               photos: property.photos,
               agence: "Bien-ici",
               lien: request.url,
+              dpe: property.dpe,
+              ges: property.ges
             });
             liensActuels.push(request.url);
           } else {
