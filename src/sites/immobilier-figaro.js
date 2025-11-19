@@ -339,6 +339,30 @@ export const figaroImmobilierScraper = async () => {
             }
           }
 
+          // Extraction du DPE (Diagnostic de Performance Énergétique)
+          let dpe = '';
+          try {
+            const dpeActiveElement = await page.$('.container-dpe .dpe-list .active');
+            if (dpeActiveElement) {
+              dpe = await dpeActiveElement.textContent();
+              dpe = dpe.trim();
+            }
+          } catch (error) {
+            log.warning('DPE non trouvé ou erreur lors de l\'extraction');
+          }
+
+          // Extraction du GES (Indice d'émission de gaz à effet de serre)
+          let ges = '';
+          try {
+            const gesActiveElement = await page.$('.container-ges .ges-list .active');
+            if (gesActiveElement) {
+              ges = await gesActiveElement.textContent();
+              ges = ges.trim();
+            }
+          } catch (error) {
+            log.warning('GES non trouvé ou erreur lors de l\'extraction');
+          }
+
           // Construire l'objet property
           const property = {
             titleText,
@@ -354,7 +378,9 @@ export const figaroImmobilierScraper = async () => {
             photos: imageUrls,
             url: request.url,
             source: 'Figaro Immobilier',
-            timestamp: new Date().toISOString()
+            timestamp: new Date().toISOString(),
+            dpe,
+            ges
           };
           
           // Vérifier les données et insérer dans la base de données
@@ -370,6 +396,8 @@ export const figaroImmobilierScraper = async () => {
               photos: property.photos,
               agence: "Figaro Immobilier",
               lien: request.url,
+              dpe: property.dpe,
+              ges: property.ges
             });
             liensActuels.push(request.url);
           } else {
