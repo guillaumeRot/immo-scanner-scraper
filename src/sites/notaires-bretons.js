@@ -146,6 +146,13 @@ export const notairesBretonsScraper = async () => {
                 .trim() 
               : '';
             
+            // DPE - Récupérer la lettre avec la classe "active"
+            const dpeElement = document.querySelector('.diagnostic-energy .letter.active .content-indice');
+            const dpe = dpeElement ? dpeElement.textContent.trim() : '';
+
+            // GES - Récupérer la lettre avec la classe "active"
+            const gesElement = document.querySelector('.diagnostic-climate .letter.active .content-indice');
+            const ges = gesElement ? gesElement.textContent.trim() : '';
 
             return {
               type,
@@ -158,6 +165,8 @@ export const notairesBretonsScraper = async () => {
               description,
               city,
               photos,
+              dpe,
+              ges,
               url: window.location.href,
               source: 'Notaires et Bretons',
               timestamp: new Date().toISOString()
@@ -175,6 +184,8 @@ export const notairesBretonsScraper = async () => {
               surface: property.surface,
               description: property.description,
               photos: property.photos,
+              dpe: property.dpe,
+              ges: property.ges,
               agence: "Notaires et Bretons",
               lien: request.url,
             });
