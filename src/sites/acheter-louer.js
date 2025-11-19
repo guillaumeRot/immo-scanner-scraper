@@ -186,6 +186,20 @@ export const acheterLouerScraper = async () => {
               .map(img => img.src)
               .filter((src, index, self) => self.indexOf(src) === index); // Éliminer les doublons
             
+            // DPE - trouver l'élément avec la classe "on"
+            let dpe = '';
+            const dpeElement = document.querySelector('.dpe-consommations li.on span');
+            if (dpeElement) {
+              dpe = dpeElement.textContent.trim();
+            }
+            
+            // GES - trouver l'élément avec la classe "on"
+            let ges = '';
+            const gesElement = document.querySelector('.dpe-emissions li.on span');
+            if (gesElement) {
+              ges = gesElement.textContent.trim();
+            }
+            
             // Construction de l'objet final avec les données extraites
             return {
               title: typeBien,
@@ -196,6 +210,8 @@ export const acheterLouerScraper = async () => {
               pieces: pieces || 0,
               description,
               photos,
+              dpe,
+              ges,
               url: window.location.href,
               source: 'Acheter-louer',
               timestamp: new Date().toISOString()
@@ -213,6 +229,8 @@ export const acheterLouerScraper = async () => {
               surface: property.surface,
               description: property.description,
               photos: property.photos,
+              dpe: property.dpe,
+              ges: property.ges,
               agence: "Acheter-louer",
               lien: request.url,
             });
