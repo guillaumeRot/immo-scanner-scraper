@@ -278,6 +278,13 @@ export const immobilierNotairesScraper = async () => {
                 .trim() 
               : '';
             
+            // DPE - extraire l'attribut "letter" de l'élément avec classe "lettres"
+            const dpeElement = document.querySelector('.col_dpe .lettres[letter]');
+            const dpe = dpeElement ? dpeElement.getAttribute('letter') : '';
+            
+            // GES - extraire l'attribut "letter" de l'élément avec classe "lettres" dans le conteneur "col_ges"
+            const gesElement = document.querySelector('.col_ges .lettres[letter]');
+            const ges = gesElement ? gesElement.getAttribute('letter') : '';
 
             return {
               type,
@@ -288,6 +295,8 @@ export const immobilierNotairesScraper = async () => {
               pieces: pieces, // On suppose que le nombre de pièces = chambres + séjour
               sdb: sdb,
               description,
+              dpe,
+              ges,
               city,
               url: window.location.href,
               source: 'Immobilier Notaires',
@@ -305,6 +314,8 @@ export const immobilierNotairesScraper = async () => {
               chambres: property.chambres,
               surface: property.surface,
               description: property.description,
+              dpe: property.dpe,
+              ges: property.ges,
               photos: photos,
               agence: "Immobilier Notaires",
               lien: request.url,
