@@ -90,31 +90,39 @@ app.get('/run-scrapers', async (req, res) => {
         await bienIciScraper();
         await updateScanTable("Bien-ici", startTime);
       } else {
-        // Si aucun paramètre ou valeur inconnue, tu lances les deux
-        // await immonotScraper();
-        await kermarrecScraper();
-        await eraScraper();
-        await blotScraper();
-        await carnotScraper();
-        await pennScraper();
-        await diardScraper();
-        await centuryScraper();
-        await bretilimmoScraper();
-        await boyerScraper();
-        await notairesBretonsScraper();
-        await immobilierNotairesScraper();
-        await figaroImmobilierScraper();
-        await acheterLouerScraper();
-        // await bienIciScraper();
-        
+        // Liste des scrapers avec leurs noms d'API
+        const scrapers = [
+          { name: "kermarrec", displayName: "Kermarrec" },
+          { name: "era", displayName: "ERA" },
+          { name: "blot", displayName: "Blot" },
+          { name: "carnot", displayName: "Carnot" },
+          { name: "penn", displayName: "Penn" },
+          { name: "diard", displayName: "Diard" },
+          { name: "century", displayName: "Century 21" },
+          { name: "bretilimmo", displayName: "Bretil'Immo" },
+          { name: "boyer", displayName: "Boyer Immobilier" },
+          { name: "notaires-bretons", displayName: "Notaires et Bretons" },
+          { name: "immobilier-notaires", displayName: "Immobilier Notaires" },
+          { name: "figaro-immobilier", displayName: "Figaro Immobilier" },
+          { name: "acheter-louer", displayName: "Acheter-louer" }
+        ];
+
+        // Exécution séquentielle des appels HTTP pour chaque scraper
+        for (const { name, displayName } of scrapers) {
+          try {
+            console.log(`🚀 Démarrage du scraper ${displayName}...`);
+            const response = await fetch(`https://immo-scanner-scraper-guillaumerot6122-pcw8vwdygmnc2g.leapcell-async.dev/run-scrapers?scraper=${name}`);
+            const data = await response.json();
+            console.log(`✅ Réponse de l'API pour ${displayName}:`, data);
+            await updateScanTable(displayName, startTime);
+          } catch (error) {
+            console.error(`❌ Erreur lors de l'appel à l'API pour ${displayName}:`, error);
+            // On continue avec le scraper suivant même en cas d'erreur
+          }
+        }
+
         // Mise à jour pour le scan complet "all"
         await updateScanTable("All", startTime);
-        
-        // Mise à jour individuelle de chaque scraper
-        const scrapers = ["Immonot", "Kermarrec", "ERA", "Blot", "Carnot", "Diard", "Penn", "Century 21", "Bretil'Immo", "Boyer Immobilier", "Notaires et Bretons", "Immobilier Notaires", "Figaro Immobilier", "Acheter-louer", "Bien-ici"];
-        for (const scraperName of scrapers) {
-          await updateScanTable(scraperName, startTime);
-        }
       }
       
       await closeDb();
