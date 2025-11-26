@@ -104,7 +104,8 @@ app.get('/run-scrapers', async (req, res) => {
           { name: "notaires-bretons", displayName: "Notaires et Bretons" },
           { name: "immobilier-notaires", displayName: "Immobilier Notaires" },
           { name: "figaro-immobilier", displayName: "Figaro Immobilier" },
-          { name: "acheter-louer", displayName: "Acheter-louer" }
+          { name: "acheter-louer", displayName: "Acheter-louer" },
+          { name: "immonot", displayName: "Immonot" }
         ];
 
         // Exécution séquentielle des appels HTTP pour chaque scraper

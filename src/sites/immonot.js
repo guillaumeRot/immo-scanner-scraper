@@ -1,6 +1,6 @@
 import { PlaywrightCrawler, RequestQueue } from "crawlee";
 import { chromium } from "playwright";
-import { deleteMissingAnnonces, insertAnnonce } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
 
 export const immonotScraper = async () => {
   const requestQueue = await RequestQueue.open(`immonot-${Date.now()}`);
@@ -21,7 +21,7 @@ export const immonotScraper = async () => {
     launchContext: {
       launcher: chromium,
       launchOptions: {
-        headless: true,
+        headless: false,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
@@ -53,46 +53,66 @@ export const immonotScraper = async () => {
         // Si c’est la première page, appliquer les filtres
         if (request.url === "https://www.immonot.com/immobilier.do") {
           try {
-
             log.info("⚙️  Immonot - Application des filtres Immonot...");
 
             // Zone de recherche
-            await page.waitForTimeout(6000);
-            await page.locator("#js-search").getByText("Toute la France").click();
+            log.info("🔍 Configuration de la recherche pour Vitré et Châteaugiron...");
+            await page.waitForTimeout(3000);
 
-            let input = page.getByRole("textbox", { name: "Ville, département, code" });
+            await page.locator('span.il-search-item-resume[data-rel="localite"]').click();
+            await page.waitForTimeout(1000);
+            
+            // Attendre et remplir le champ de recherche
+            const input = page.locator('.il-search-box.visible .x-form-autocomplete[data-rel="localite"] input.y-ac-input[type="text"]');
+            await input.waitFor({ state: 'visible', timeout: 15000 });
             await input.click();
             await input.fill("");
+            await page.waitForTimeout(1000);
 
-            const city = "Vitré";
-            for (const ch of city) {
-              await input.type(ch, { delay: 120 });
-              await page.waitForTimeout(100);
-            }
+            // Saisie de la première ville
+            log.info("🏙️  Ajout de Vitré...");
+            await input.type("Vitré", { delay: 100 });
+            
+            // Attendre et sélectionner Vitré
+            const suggestionVitre = page.locator('li[data-type="commune"]', { hasText: "Vitré" }).first();
+            await suggestionVitre.waitFor({ state: 'visible', timeout: 10000 });
+            await suggestionVitre.click();
+            
+            // Vérifier que Vitré est bien sélectionné
+            await page.waitForFunction(
+                () => {
+                    const elements = Array.from(document.querySelectorAll('.y-ac-tag-city'));
+                    return elements.some(el => el.textContent.includes('Vitré'));
+                },
+                null,
+                { timeout: 10000 }
+            );
+            log.info("✅ Vitré correctement sélectionné");
 
-            // Attendre l'apparition des suggestions et sélectionner la bonne
-            const suggestion = page
-              .locator('li[data-type="commune"]', { hasText: "Vitré" })
-              .first();
-            await suggestion.waitFor({ state: "visible", timeout: 10000 });
-            await suggestion.click();
-
-            // Ajouter Châteaugiron
-            input = page.getByRole("textbox", { name: "Ville, département, code" });
+            // Ajout de la deuxième ville
+            log.info("🏙️  Ajout de Châteaugiron...");
             await input.click();
             await input.fill("");
-
-            const city2 = "Chateaugiron";
-            for (const ch of city2) {
-              await input.type(ch, { delay: 120 });
-              await page.waitForTimeout(100);
-            }
-
-            const suggestion2 = page
-              .locator('li[data-type="commune"]', { hasText: "Châteaugiron" })
-              .first();
-            await suggestion2.waitFor({ state: "visible", timeout: 10000 });
-            await suggestion2.click();
+            await input.type("Chateaugiron", { delay: 100 });
+            
+            // Attendre et sélectionner Châteaugiron
+            const suggestionChateaugiron = page.locator('li[data-type="commune"]', { hasText: "Châteaugiron" }).first();
+            await suggestionChateaugiron.waitFor({ state: 'visible', timeout: 10000 });
+            await suggestionChateaugiron.click();
+            
+            // Vérifier que Châteaugiron est bien sélectionné
+            await page.waitForFunction(
+                () => {
+                    const elements = Array.from(document.querySelectorAll('.y-ac-tag-city'));
+                    return elements.some(el => el.textContent.includes('Châteaugiron'));
+                },
+                null,
+                { timeout: 10000 }
+            );
+            log.info("✅ Châteaugiron correctement sélectionné");
+            
+            // Attendre un peu pour être sûr que tout est chargé
+            await page.waitForTimeout(2000);
 
             // Type d'annonce
             await page.getByText('Aucune sélection').nth(3).click();
@@ -120,38 +140,34 @@ export const immonotScraper = async () => {
             // await page.waitForLoadState("networkidle", { timeout: 60000 });
             log.info("✅ Immonot - Filtres appliqués et résultats chargés.");
 
+            // Récupération des annonces de la page
+            const links = await page.$$eval(".il-card a.js-mirror-link", (els) =>
+              els.map((a) => a.href)
+            );
+
+            log.info(`📌 Immonot - ${links.length} annonces trouvées sur cette page.`);
+
+            // Ajoute chaque lien dans la file pour traitement détail
+            for (const url of links) {
+              await requestQueue.addRequest({ url, userData: { label: "DETAIL_PAGE" } });
+            }
+
+            // Gestion pagination
+            const nextUrl = await page
+              .$eval("a.page-link[rel='next']", (el) => el?.href)
+              .catch(() => null);
+
+            if (nextUrl) {
+              log.info("➡️ Immonot - Page suivante détectée, ajout dans la file...");
+              await requestQueue.addRequest({ url: nextUrl, userData: { label: "LIST_PAGE" } });
+            } else {
+              log.info("✅ Immonot - Fin de la pagination détectée.");
+            }
+
           } catch (e) {
             log.error("❌ Immonot - Erreur lors du chargement des résultats avec filtres", { error: String(e) });
             await insertErreur("Immonot", request.url, String(e));
           }
-        }
-
-        // Récupération des annonces de la page
-        const links = await page.$$eval(".il-card a.js-mirror-link", (els) =>
-          els.map((a) => a.href)
-        );
-
-        for(var link of links){
-          log.info("Immonot - Ajout dans la queue du lien : ", link) 
-        }
-
-        log.info(`📌 Immonot - ${links.length} annonces trouvées sur cette page.`);
-
-        // Ajoute chaque lien dans la file pour traitement détail
-        for (const url of links) {
-          await requestQueue.addRequest({ url, userData: { label: "DETAIL_PAGE" } });
-        }
-
-        // Gestion pagination
-        const nextUrl = await page
-          .$eval("a.page-link[rel='next']", (el) => el?.href)
-          .catch(() => null);
-
-        if (nextUrl) {
-          log.info("➡️ Immonot - Page suivante détectée, ajout dans la file...");
-          await requestQueue.addRequest({ url: nextUrl, userData: { label: "LIST_PAGE" } });
-        } else {
-          log.info("✅ Immonot - Fin de la pagination détectée.");
         }
       }
 
