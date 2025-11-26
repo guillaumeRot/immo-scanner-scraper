@@ -24,7 +24,7 @@
 
 # Liste des sites de notaires
 
-⌛ Immonot: Vitré / Chateaugiron (prend toutes villes lors du scrap complet)  
+✅ Immonot: Vitré / Chateaugiron (prend toutes villes lors du scrap complet)  
 ✅ Notaires et bretons  
 ✅ immobilier.notaires.fr
 

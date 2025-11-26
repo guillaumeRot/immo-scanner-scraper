@@ -21,7 +21,7 @@ export const immonotScraper = async () => {
     launchContext: {
       launcher: chromium,
       launchOptions: {
-        headless: false,
+        headless: true,
         args: [
           "--no-sandbox",
           "--disable-setuid-sandbox",
