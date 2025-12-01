@@ -5,4 +5,4 @@ npm install
 
 # Install playwright and its dependencies
 # npx -y playwright@latest install --with-deps chromium
-npx playwright install
+npx playwright install --with-deps
