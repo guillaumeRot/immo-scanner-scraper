@@ -32,12 +32,12 @@ app.get('/run-scrapers', async (req, res) => {
     const { scraper } = req.query;
 
     console.log(`📩 [Handler] Appel reçu pour le scraper ${scraper}!`);
-    if (isScrapeRunning) {
-        return res.status(409).json({
-          status: "already_running",
-          message: "Un scraping est déjà en cours. Réessayez plus tard.",
-        });
-    }
+    // if (isScrapeRunning) {
+    //     return res.status(409).json({
+    //       status: "already_running",
+    //       message: "Un scraping est déjà en cours. Réessayez plus tard.",
+    //     });
+    // }
 
     try {
       isScrapeRunning = true;
@@ -112,7 +112,7 @@ app.get('/run-scrapers', async (req, res) => {
         for (const { name, displayName } of scrapers) {
           try {
             console.log(`🚀 Démarrage du scraper ${displayName}...`);
-            const response = await fetch(`https://immo-scanner-scraper-guillaumerot6122-pcw8vwdygmnc2g.leapcell-async.dev/run-scrapers?scraper=${name}`);
+            const response = await fetch(`http://localhost:8080/run-scrapers?scraper=${name}`);
             const data = await response.json();
             console.log(`✅ Réponse de l'API pour ${displayName}:`, data);
             await updateScanTable(displayName, startTime);
