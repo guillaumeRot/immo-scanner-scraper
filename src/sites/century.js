@@ -57,7 +57,8 @@ export const centuryScraper = async () => {
                   url = `https://www.century21.fr${url.startsWith('/') ? '' : '/'}${url}`;
                 }
                 return url;
-              });
+              })
+              .filter(url => url.includes('/trouver_logement')); // Ne garder que les liens contenant /trouver_logement
           }
         );
 
