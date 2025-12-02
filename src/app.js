@@ -112,10 +112,7 @@ app.get('/run-scrapers', async (req, res) => {
         for (const { name, displayName } of scrapers) {
           try {
             console.log(`🚀 Démarrage du scraper ${displayName}...`);
-            const response = await fetch(`http://localhost:8080/run-scrapers?scraper=${name}`);
-            const data = await response.json();
-            console.log(`✅ Réponse de l'API pour ${displayName}:`, data);
-            await updateScanTable(displayName, startTime);
+            await fetch(`http://localhost:8080/run-scrapers?scraper=${name}`);
           } catch (error) {
             console.error(`❌ Erreur lors de l'appel à l'API pour ${displayName}:`, error);
             // On continue avec le scraper suivant même en cas d'erreur
