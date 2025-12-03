@@ -77,62 +77,34 @@ export const figaroImmobilierScraper = async () => {
 
         // Gestion de la pagination
         try {
-          // Vérifier s'il y a un lien "Suivant" non désactivé
-          const nextLink = await page.locator('a.btn-pagination[rel="next"]:not(.disabled)').first();
+          // Vérifier s'il y a un bouton "Suivant" sans la classe "disabled"
+          const nextButton = await page.locator('button.btn-pagination[title="Aller à la page suivante"]:not(.disabled)').first();
           
-          if (await nextLink.count() > 0) {
-            // Récupérer l'URL de la page suivante
-            const nextPageUrl = await nextLink.getAttribute('href');
+          if (nextButton && (await nextButton.count()) > 0) {
+            // Récupérer le numéro de page actuel
+            const currentPageElement = await page.locator('.pagination .link--current').first();
+            let currentPage = 1;
             
-            if (nextPageUrl) {
-              // Construire l'URL complète si nécessaire
-              const fullNextUrl = nextPageUrl.startsWith('http') 
-                ? nextPageUrl 
-                : `https://immobilier.lefigaro.fr${nextPageUrl}`;
-              
-              log.info(`➡️ Figaro Immobilier - Page suivante détectée: ${fullNextUrl}`);
-              
-              // Ajouter la page suivante à la file d'attente
-              await requestQueue.addRequest({ 
-                url: fullNextUrl,
-                userData: { label: "LIST_PAGE" }
-              });
-            } else {
-              log.info("✅ Figaro Immobilier - Dernière page de la pagination atteinte (pas d'URL suivante).");
+            if (currentPageElement) {
+              const pageText = await currentPageElement.textContent();
+              currentPage = parseInt(pageText, 10) || 1;
             }
+            
+            // Construire l'URL de la page suivante
+            const nextPage = currentPage + 1;
+            const baseUrl = request.url.split('&page=')[0]; // Enlever le paramètre page s'il existe
+            const nextPageUrl = `${baseUrl}&page=${nextPage}`;
+            
+            log.info(`➡️ Figaro Immobilier - Page suivante détectée: ${nextPage}`);
+            
+            // Ajouter la page suivante à la file d'attente
+            await requestQueue.addRequest({ 
+              url: nextPageUrl,
+              userData: { label: "LIST_PAGE" }
+            });
           } else {
             // Vérifier s'il y a une pagination avec des numéros de page
-            const hasPagination = await page.locator('ul.pagination').count() > 0;
-            
-            if (hasPagination) {
-              // Récupérer le numéro de page actuel
-              const currentPageItem = await page.locator('ul.pagination .link--current').first();
-              const currentPage = currentPageItem ? parseInt(await currentPageItem.textContent()) : 1;
-              
-              // Vérifier s'il y a une page suivante dans la numérotation
-              const nextPageItem = await page.locator(`ul.pagination .link:not(.link--current)`).first();
-              
-              if (nextPageItem && (await nextPageItem.count()) > 0) {
-                // Construire l'URL de la page suivante en incrémentant le numéro de page
-                const nextPageNumber = currentPage + 1;
-                const currentUrl = new URL(page.url());
-                const searchParams = new URLSearchParams(currentUrl.search);
-                searchParams.set('page', nextPageNumber);
-                currentUrl.search = searchParams.toString();
-                const fullNextUrl = currentUrl.toString();
-                
-                log.info(`➡️ Figaro Immobilier - Page ${nextPageNumber} détectée via la pagination: ${fullNextUrl}`);
-                
-                await requestQueue.addRequest({
-                  url: fullNextUrl,
-                  userData: { label: "LIST_PAGE" }
-                });
-              } else {
-                log.info("✅ Figaro Immobilier - Dernière page de la pagination atteinte.");
-              }
-            } else {
-              log.info("ℹ️ Figaro Immobilier - Aucune pagination détectée.");
-            }
+            log.info("✅ Figaro Immobilier - Dernière page de la pagination atteinte.");
           }
         } catch (error) {
           log.error(` Figaro Immobilier - Erreur lors de la gestion de la pagination: ${error.message}`);
