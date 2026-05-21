@@ -15,9 +15,21 @@ export const blotScraper = async () => {
 
   const crawler = new PlaywrightCrawler({
     requestQueue,
-    maxConcurrency: 1, // équilibre vitesse / RAM
+    maxConcurrency: 1,
     requestHandlerTimeoutSecs: 180,
     navigationTimeoutSecs: 30,
+    preNavigationHooks: [
+      async ({ blockRequests }) => {
+        await blockRequests({
+          urlPatterns: [
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+            ".css", ".woff", ".woff2", ".ttf",
+            "google-analytics", "googletagmanager", "hotjar",
+            "mapbox", "facebook", "doubleclick",
+          ],
+        });
+      },
+    ],
     launchContext: {
       launcher: chromium,
       launchOptions: {
@@ -41,14 +53,12 @@ export const blotScraper = async () => {
         log.info(`🔎 Blot - Page de liste : ${request.url}`);
 
         await page.goto(request.url);
-        await page.waitForLoadState("networkidle", { timeout: 60000 });
 
         // Accepter cookies si présent
         try {
           await page
             .getByRole("button", { name: "Accepter", exact: true })
             .click({ timeout: 5000 });
-          await page.waitForLoadState("networkidle", { timeout: 30000 });
         } catch (err) {
           log.info("Pas de bannière de cookies trouvée ou déjà acceptée");
         }
@@ -104,7 +114,7 @@ export const blotScraper = async () => {
         let hasNextPage = true;
 
         while (hasNextPage) {
-          await page.waitForLoadState("networkidle", { timeout: 30000 });
+          await page.waitForSelector('.search-results__item', { timeout: 15000 });
           log.info(`🔍 Blot - Traitement de la page ${currentPage}...`);
           
           // Récupération des liens de la page courante
@@ -124,10 +134,9 @@ export const blotScraper = async () => {
           if (nextButton) {
             log.info("➡️ Blot - Passage à la page suivante...");
             await Promise.all([
-              await page.waitForLoadState("networkidle", { timeout: 10000 }),
-              nextButton.click()
+              page.waitForSelector('.search-results__item', { timeout: 10000 }),
+              nextButton.click(),
             ]);
-            await page.waitForTimeout(2000);
             currentPage++;
           } else {
             hasNextPage = false;
