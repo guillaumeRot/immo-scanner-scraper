@@ -192,6 +192,7 @@ await page.waitForSelector('.ui-menu-item', { timeout: 5000 });
 | ERA | Playwright | fetch+JSON (ng-state) | ~300MB RAM, ~30s |
 | Blot | Playwright | Playwright optimisé | ~2x plus rapide |
 | Carnot | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
+| Diard | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
 
 ---
 
@@ -215,7 +216,7 @@ curl -s "<URL>" -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/
 
 ## Sites restants à analyser
 
-Dans `src/sites/` : `boyer.js`, `bretilimmo.js`, `diard.js`, `penn.js`, `century.js`, `notaires-bretons.js`, `immobilier-notaires.js`, `immonot.js`, `fnaim.js`, `acheter-louer.js`, `bien-ici.js`, `logic-immo.js`, `ouest-france.js`, `immobilier-figaro.js`
+Dans `src/sites/` : `boyer.js`, `bretilimmo.js`, `penn.js`, `century.js`, `notaires-bretons.js`, `immobilier-notaires.js`, `immonot.js`, `fnaim.js`, `acheter-louer.js`, `bien-ici.js`, `logic-immo.js`, `ouest-france.js`, `immobilier-figaro.js`
 
 Les petites agences locales (Boyer, Bretilimmo, Carnot, Diard, Penn) sont probablement des sites WordPress/SSR → bons candidats pour fetch+cheerio.
 
