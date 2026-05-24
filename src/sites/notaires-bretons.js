@@ -1,215 +1,109 @@
-import { PlaywrightCrawler, RequestQueue } from "crawlee";
-import { chromium } from "playwright";
+import * as cheerio from "cheerio";
 import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
 
+const BASE_URL = "https://www.notaireetbreton.bzh";
+const LIST_URL =
+  `${BASE_URL}/biens/achat/immeuble%2Cmaison-individuelle/vitre-35500` +
+  `?field_price_value%5Bmax%5D=400000&sort_bef_combine=field_price_value_ASC&display-mode=list`;
+
+const HEADERS = {
+  "User-Agent":
+    "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+};
+
+async function fetchHtml(url) {
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+  return res.text();
+}
+
+async function scrapeListPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  const links = new Set();
+  $(".view-content .node--type-property .node__content > a[href^='/biens/']").each((_, el) => {
+    const href = $(el).attr("href") || "";
+    if (href) links.add(`${BASE_URL}${href.split("?")[0]}`);
+  });
+
+  const nextHref = $("a[rel='next'], a.pager__item--next a").attr("href") || null;
+  const nextUrl = nextHref
+    ? nextHref.startsWith("http") ? nextHref : `${BASE_URL}${nextHref}`
+    : null;
+
+  return { links: [...links], nextUrl };
+}
+
+async function scrapeDetailPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  const ville = $("nav.breadcrumb li:nth-child(5) span[itemprop='name']")
+    .text().trim().replace(/\(.*\)/g, "").trim();
+  const type = $("nav.breadcrumb li:nth-child(3) span[itemprop='name']").text().trim();
+  const prix = parseInt(($(".field--name-field-price").first().text() || "").replace(/[^0-9]/g, "")) || 0;
+  const surface = parseInt(($(".field--name-field-living-space .field__item").first().text() || "").replace(/\D/g, "")) || 0;
+  const pieces = parseInt(($(".field--name-field-rooms-number .field__item").first().text() || "").replace(/\D/g, "")) || 0;
+  const chambres = parseInt(($(".field--name-field-bedrooms .field__item").first().text() || "").replace(/\D/g, "")) || 0;
+  const description = $(".description-content p").first().text().trim();
+  const dpe = $(".diagnostic-energy .letter.active .content-indice").text().trim() || null;
+  const ges = $(".diagnostic-climate .letter.active .content-indice").text().trim() || null;
+
+  const photos = [];
+  $("img[src*='/property/']").each((_, el) => {
+    const src = $(el).attr("src") || "";
+    if (src.includes("/themes/")) return;
+    const full = src.startsWith("http") ? src : `${BASE_URL}${src}`;
+    if (!photos.includes(full)) photos.push(full);
+  });
+
+  return { ville, type, prix, surface, pieces, chambres, description, dpe, ges, photos };
+}
+
 export const notairesBretonsScraper = async () => {
-  const requestQueue = await RequestQueue.open(`notaires-bretons-${Date.now()}`);
-  
-  // On démarre par la première page des annonces
-  await requestQueue.addRequest({
-    url: "https://www.notaireetbreton.bzh/biens/achat/immeuble%2Cmaison-individuelle/vitre-35500?field_price_value%5Bmax%5D=400000&sort_bef_combine=field_price_value_ASC&display-mode=list",
-    userData: { label: "LIST_PAGE" },
-  });
-
   const liensActuels = [];
+  let currentUrl = LIST_URL;
 
-  const crawler = new PlaywrightCrawler({
-    requestQueue,
-    maxConcurrency: 1, // équilibre vitesse / RAM
-    requestHandlerTimeoutSecs: 180,
-    navigationTimeoutSecs: 30,
-    maxRequestRetries: 1,
-    launchContext: {
-      launcher: chromium,
-      launchOptions: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--single-process",
-          "--no-zygote",
-        ],
-      },
-    },
-    async requestHandler({ page, request, log }) {
-      const { label } = request.userData;
+  while (currentUrl) {
+    console.log(`🔎 Notaires Bretons - Page de liste : ${currentUrl}`);
+    const { links, nextUrl } = await scrapeListPage(currentUrl);
+    console.log(`📌 Notaires Bretons - ${links.length} annonces trouvées.`);
 
-      // 🧭 Étape 1 — Pages de liste
-      if (label === "LIST_PAGE") {
-        log.info(`Notaires Bretons - Page de liste : ${request.url}`);
+    for (const url of links) {
+      try {
+        console.log(`📄 Notaires Bretons - Page détail : ${url}`);
+        const data = await scrapeDetailPage(url);
 
-        await page.goto(request.url);
-        log.info("Notaires Bretons - Page chargée.");
-
-        // Attendre que les annonces soient chargées
-        await page.waitForSelector('.view-content .node--type-property', { timeout: 10000 });
-
-        // Récupérer les liens des annonces de la page
-        const links = await page.$$eval(
-          '.view-content .node--type-property .node__content > a[href^="/biens/"]',
-          (anchors) => anchors.map(a => {
-            // Construire l'URL complète
-            const baseUrl = window.location.origin;
-            const path = a.getAttribute('href');
-            return new URL(path, baseUrl).href;
-          })
-        );
-
-        // Filtrer les doublons
-        const uniqueLinks = [...new Set(links)];
-        log.info(`Notaires Bretons - ${uniqueLinks.length} annonces uniques trouvées.`);
-        
-        // Ajouter chaque annonce dans la file pour traitement détaillé
-        for (const annonceUrl of uniqueLinks) {
-          await requestQueue.addRequest({ 
-            url: annonceUrl, 
-            userData: { label: "DETAIL_PAGE" } 
+        if (data.ville && data.prix) {
+          await insertAnnonce({
+            type: data.type,
+            prix: data.prix,
+            ville: data.ville,
+            pieces: data.pieces,
+            chambres: data.chambres,
+            surface: data.surface,
+            description: data.description,
+            photos: data.photos,
+            dpe: data.dpe,
+            ges: data.ges,
+            agence: "Notaires et Bretons",
+            lien: url,
           });
+          liensActuels.push(url);
+        } else {
+          console.warn(`⚠️ Notaires Bretons - Données incomplètes pour ${url}`);
+          await insertErreur("Notaires et Bretons", url, "Données incomplètes (ville ou prix manquant)");
         }
+      } catch (err) {
+        console.error(`❌ Notaires Bretons - Erreur sur ${url}:`, err.message);
+        await insertErreur("Notaires et Bretons", url, String(err));
       }
+    }
 
-      // Étape 2 — Pages de détail
-      if (label === "DETAIL_PAGE") {
-        try {
-          log.info(`Notaires Bretons - Page détail : ${request.url}`);
+    currentUrl = nextUrl;
+  }
 
-          await page.goto(request.url, { waitUntil: "domcontentloaded" });
-
-          // Extraction des informations principales
-          const property = await page.evaluate(() => {
-            // Fonction utilitaire pour extraire le texte d'un élément par son libellé
-            const getValueByLabel = (label) => {
-              const element = Array.from(document.querySelectorAll('.product-criteres .list-group-item'))
-                .find(li => li.textContent.includes(label));
-              return element?.querySelector('b')?.textContent.trim() || '';
-            };
-
-            // Ville (depuis le fil d'Ariane, 5ème élément)
-            const cityElement = document.querySelector('nav.breadcrumb li:nth-child(5) span[itemprop="name"]');
-            let city = cityElement ? cityElement.textContent.trim() : '';
-            // Nettoyer le code postal entre parenthèses si présent (ex: "VITRE (35500)" -> "VITRE")
-            city = city.replace(/\(.*\)/g, '').trim();
-            
-            // Type de bien (depuis le fil d'Ariane)
-            const typeElement = document.querySelector('nav.breadcrumb li:nth-child(3) span[itemprop="name"]');
-            const type = typeElement ? typeElement.textContent.trim() : 'Autre';
-            
-            // Prix
-            const priceElement = document.querySelector('.field--name-field-price');
-            const priceText = priceElement ? priceElement.textContent.trim() : '';
-            const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
-            
-            // Récupération des caractéristiques principales
-            const getFieldValue = (fieldName, isNumeric = true) => {
-              const element = document.querySelector(`.field--name-${fieldName} .field__item`);
-              if (!element) return isNumeric ? 0 : '';
-              const text = element.textContent.trim();
-              return isNumeric ? parseInt(text.replace(/\D/g, '')) || 0 : text;
-            };
-            
-            // Surface habitable
-            const surface = getFieldValue('field-living-space');
-            
-            // Surface du terrain
-            const landSurface = getFieldValue('field-land-space');
-
-            // Photos - Récupération depuis le carrousel
-            const photos = Array.from(document.querySelectorAll('.owl-stage .owl-item img[src*="/property/"]')).map(img => {
-              // Récupérer l'URL de l'image et nettoyer les paramètres
-              const imgUrl = img.getAttribute('src');
-              // Supprimer les paramètres de l'URL (après le ?) pour avoir l'image en pleine résolution
-              return imgUrl.split('?')[0];
-            }).filter((url, index, self) => 
-              url && self.indexOf(url) === index // Éliminer les doublons
-            ).map(relativeUrl => {
-              // Convertir en URL absolue si nécessaire
-              return relativeUrl.startsWith('http') ? relativeUrl : `https://www.notaireetbreton.bzh${relativeUrl}`;
-            });
-            
-            // Nombre de chambres - ciblage par l'ID du SVG
-            const bedroomsElement = document.querySelector('svg#g5ere_bed')?.closest('.iwp__overview-item')?.querySelector('strong');
-            const bedroomsText = bedroomsElement ? bedroomsElement.textContent.trim() : '0';
-            const bedrooms = parseInt(bedroomsText) || 0;
-            
-            // Nombre de salles de bain - ciblage par l'ID du SVG
-            const bathroomElement = document.querySelector('svg#g5ere_bath')?.closest('.iwp__overview-item')?.querySelector('strong');
-            const bathroomText = bathroomElement ? bathroomElement.textContent.trim() : '0';
-            const sdb = parseInt(bathroomText) || 0;
-                        
-            // Description
-            const descriptionElement = document.querySelector('.description-content p');
-            const description = descriptionElement ? 
-              descriptionElement.textContent
-                .replace(/\s+/g, ' ') // Remplacer les espaces multiples par un seul espace
-                .trim() 
-              : '';
-            
-            // DPE - Récupérer la lettre avec la classe "active"
-            const dpeElement = document.querySelector('.diagnostic-energy .letter.active .content-indice');
-            const dpe = dpeElement ? dpeElement.textContent.trim() : '';
-
-            // GES - Récupérer la lettre avec la classe "active"
-            const gesElement = document.querySelector('.diagnostic-climate .letter.active .content-indice');
-            const ges = gesElement ? gesElement.textContent.trim() : '';
-
-            return {
-              type,
-              price,
-              surface,
-              landSurface,
-              bedrooms,
-              pieces: bedrooms + 1, // On suppose que le nombre de pièces = chambres + séjour
-              sdb: sdb,
-              description,
-              city,
-              photos,
-              dpe,
-              ges,
-              url: window.location.href,
-              source: 'Notaires et Bretons',
-              timestamp: new Date().toISOString()
-            };
-          });
-          
-          // Vérifier les données et insérer dans la base de données
-          if (property.type && property.price) {
-            await insertAnnonce({
-              type: property.type,
-              prix: property.price,
-              ville: property.city,
-              pieces: property.pieces,
-              chambres: property.bedrooms,
-              surface: property.surface,
-              description: property.description,
-              photos: property.photos,
-              dpe: property.dpe,
-              ges: property.ges,
-              agence: "Notaires et Bretons",
-              lien: request.url,
-            });
-            liensActuels.push(request.url);
-          } else {
-            log.warning(`⚠️ Notaires Bretons - Données incomplètes pour ${request.url}`);
-            await insertErreur("Notaires et Bretons", request.url, "Données incomplètes");
-          }
-        } catch (err) {
-          log.error(`🚨 Notaires Bretons - Erreur pour ${request.url}: ${err.message}`);
-          await insertErreur("Notaires et Bretons", request.url, err.message);
-        }
-      }
-    },
-
-    failedRequestHandler({ request, log }) {
-      log.error(`🚨 Notaires Bretons - Échec permanent pour ${request.url}`);
-    },
-  });
-
-  await crawler.run();
-
-  // Nettoyer les annonces manquantes
   await deleteMissingAnnonces("Notaires et Bretons", Array.from(new Set(liensActuels)));
-
   console.log("✅ Notaires Bretons - Scraping terminé !");
 };
