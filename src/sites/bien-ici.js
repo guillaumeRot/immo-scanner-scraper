@@ -1,270 +1,91 @@
-import { PlaywrightCrawler, RequestQueue } from "crawlee";
-import { chromium } from "playwright";
 import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
 
+const ZONE_IDS = ["-106682", "-6837759"]; // Vitré 35500, Châteaugiron 35410
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Referer": "https://www.bienici.com/",
+  "Accept": "application/json",
+};
+
+async function fetchPage(from, size = 100) {
+  const filters = {
+    size, from,
+    filterType: "buy",
+    propertyType: ["house", "building"],
+    maxPrice: 400000,
+    zoneIdsByTypes: { zoneIds: ZONE_IDS },
+    sortBy: "publicationDate",
+    sortOrder: "desc",
+  };
+  const url = `https://www.bienici.com/realEstateAds.json?filters=${encodeURIComponent(JSON.stringify(filters))}`;
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on realEstateAds.json`);
+  return res.json();
+}
+
+function parseAd(ad) {
+  const type = ad.propertyType === "building" ? "immeuble" : "maison";
+  const prix = ad.price || 0;
+  const ville = ad.city || "";
+  const surface = ad.surfaceArea || 0;
+  const pieces = ad.roomsQuantity || 0;
+  const chambres = ad.bedroomsQuantity || 0;
+  const description = (ad.description || "")
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<[^>]+>/g, "")
+    .trim();
+  const photos = (ad.photos || []).map(p => p.url || p.url_photo).filter(Boolean);
+  const dpe = ad.energyClassification || null;
+  const ges = ad.greenhouseGazClassification || null;
+  return { type, prix, ville, surface, pieces, chambres, description, photos, dpe, ges };
+}
+
 export const bienIciScraper = async () => {
-  const requestQueue = await RequestQueue.open(`bien-ici-${Date.now()}`);
-  
-  // On démarre par la première page des annonces
-  await requestQueue.addRequest({
-    url: "https://www.bienici.com/recherche/achat/vitre-35500,chateaugiron-35410/maisonvilla,batiment?prix-max=400000",
-    userData: { label: "LIST_PAGE" },
-  });
-
   const liensActuels = [];
+  const size = 100;
+  let from = 0;
+  let total = Infinity;
 
-  const crawler = new PlaywrightCrawler({
-    requestQueue,
-    maxConcurrency: 1, // équilibre vitesse / RAM
-    requestHandlerTimeoutSecs: 180,
-    navigationTimeoutSecs: 30,
-    maxRequestRetries: 1,
-    launchContext: {
-      launcher: chromium,
-      launchOptions: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--single-process",
-          "--no-zygote",
-        ],
-      },
-    },
-    async requestHandler({ page, request, log }) {
-      const { label } = request.userData;
+  while (from < total) {
+    const json = await fetchPage(from, size);
+    total = json.total;
+    const ads = json.realEstateAds || [];
+    console.log(`📌 Bien-ici - ${from + ads.length}/${total} annonces récupérées`);
 
-      // 🧭 Étape 1 — Pages de liste
-      if (label === "LIST_PAGE") {
-        log.info(` Bien-ici - Page de liste : ${request.url}`);
-
-        await page.goto(request.url);
-        log.info(" Bien-ici - Page chargée.");
-
-        // Gérer le popup de cookies s'il est présent
-        try {
-            await page.waitForSelector('#didomi-notice-agree-button', { timeout: 5000 });
-            await page.click('#didomi-notice-agree-button');
-            log.info("✅ Popup de cookies accepté");
-        } catch (error) {
-            log.info("ℹ️ Pas de popup de cookies détecté");
-        }
-
-        // Attendre que les annonces soient chargées
-        await page.waitForSelector(".ads-search-results__search-results-container", { state: "attached", timeout: 20000 });
-
-        // Récupérer les liens des annonces de la page
-        const links = await page.$$eval(
-          "article.search-results-list__ad-overview a.detailedSheetLink[href]",
-          (anchors) => anchors.map(a => {
-            // Convertir les URLs relatives en absolues si nécessaire
-            return a.href.startsWith('http') ? a.href : `https://www.bienici.com${a.href}`;
-          })
-        );
-
-        // Filtrer les doublons
-        const uniqueLinks = [...new Set(links)];
-        log.info(`📌 Bien-ici - ${uniqueLinks.length} annonces uniques trouvées sur cette page.`);
-
-        // Ajouter chaque lien dans la file pour traitement détaillé
-        for (const url of uniqueLinks) {
-          await requestQueue.addRequest({ 
-            url, 
-            userData: { label: "DETAIL_PAGE" } 
+    for (const ad of ads) {
+      const lien = `https://www.bienici.com/annonce/${ad.id}`;
+      try {
+        const data = parseAd(ad);
+        if (data.ville && data.prix) {
+          await insertAnnonce({
+            type: data.type,
+            prix: data.prix,
+            ville: data.ville,
+            pieces: data.pieces,
+            chambres: data.chambres,
+            surface: data.surface,
+            description: data.description,
+            photos: data.photos,
+            dpe: data.dpe,
+            ges: data.ges,
+            agence: "Bien-ici",
+            lien,
           });
+          liensActuels.push(lien);
+        } else {
+          console.warn(`⚠️ Bien-ici - Données incomplètes pour ${lien}`);
+          await insertErreur("Bien-ici", lien, "Données incomplètes (ville ou prix manquant)");
         }
-
-        // Gestion de la pagination
-        try {
-          // Trouver le bouton de la page courante et récupérer le lien suivant
-          const nextPageUrl = await page.evaluate(() => {
-            const currentPageBtn = document.querySelector('.pagination__current-page');
-            if (!currentPageBtn) return null;
-            
-            // Trouver le prochain élément frère qui est un lien
-            let nextElement = currentPageBtn.nextElementSibling;
-            while (nextElement) {
-              if (nextElement.tagName === 'A' && nextElement.href) {
-                return nextElement.href;
-              }
-              nextElement = nextElement.nextElementSibling;
-            }
-            return null;
-          });
-
-          if (nextPageUrl) {
-            log.info(`➡️ Bien-ici - Page suivante détectée: ${nextPageUrl}`);
-            
-            // Ajouter la page suivante à la file d'attente
-            await requestQueue.addRequest({ 
-              url: nextPageUrl,
-              userData: { label: "LIST_PAGE" },
-            });
-          } else {
-            log.info("✅ Bien-ici - Dernière page de la pagination atteinte.");
-          }
-        } catch (error) {
-          log.error(`❌ Bien-ici - Erreur lors de la gestion de la pagination: ${error.message}`);
-        }
+      } catch (err) {
+        console.error(`❌ Bien-ici - Erreur sur ${lien}: ${err.message}`);
+        await insertErreur("Bien-ici", lien, String(err));
       }
+    }
 
-      // 🏡 Étape 2 — Pages de détail
-      if (label === "DETAIL_PAGE") {
-        try {
-          log.info(`📄 Bien-ici - Page détail : ${request.url}`);
+    from += size;
+    if (ads.length < size) break;
+  }
 
-          // await page.goto(request.url, { waitUntil: "domcontentloaded" });
-          await page.goto(request.url, { waitUntil: "domcontentloaded" });
-
-          // Attendre que l'annonce soient chargées
-          await page.waitForSelector(".detailedSheetOtherInfo", { state: "attached", timeout: 20000 });
-
-          // Extraction des informations principales
-          const property = await page.evaluate(() => {
-            // Fonction pour nettoyer le texte
-            const cleanText = (selector) => 
-              document.querySelector(selector)?.textContent.trim() || '';
-            
-            // Titre et type de bien
-            const titleElement = document.querySelector('.titleInside h1');
-            const title = titleElement ? titleElement.textContent.trim() : 'Bien non spécifié';
-            const type = title.toLowerCase().includes('maison') ? 'Maison' : 
-                        title.toLowerCase().includes('appartement') ? 'Appartement' : 
-                        title.toLowerCase().includes('immeuble') ? 'Immeuble' : 'Autre';
-            
-            // Prix
-            const priceText = cleanText('.ad-price__the-price');
-            const price = parseInt(priceText.replace(/[^0-9]/g, '')) || 0;
-            
-            // Surface
-            const surfaceElement = Array.from(document.querySelectorAll('.labelInfo span'))
-              .find(el => el.textContent.trim().endsWith('m²') && !el.textContent.includes('terrain'));
-            const surface = surfaceElement ? 
-              parseInt(surfaceElement.textContent.replace(/[^0-9]/g, '')) : 0;
-            
-            // Surface du terrain
-            const landSurfaceElement = Array.from(document.querySelectorAll('.labelInfo span'))
-              .find(el => el.textContent.trim().endsWith('m² de terrain'));
-            const landSurface = landSurfaceElement ? 
-              parseInt(landSurfaceElement.textContent.replace(/[^0-9]/g, '')) : 0;
-            
-            // Pièces
-            const piecesElement = Array.from(document.querySelectorAll('.labelInfo span'))
-              .find(el => el.textContent.trim().endsWith('pièces'));
-            const pieces = piecesElement ? 
-              parseInt(piecesElement.textContent.replace(/[^0-9]/g, '')) : 0;
-            
-            // Chambres
-            const bedroomsElement = Array.from(document.querySelectorAll('.labelInfo span'))
-              .find(el => el.textContent.trim().endsWith('chambres'));
-            const bedrooms = bedroomsElement ? 
-              parseInt(bedroomsElement.textContent.replace(/[^0-9]/g, '')) : 0;
-            
-            // Description
-            const description = cleanText('.see-more-description');
-            
-            // Localisation (adresse complète)
-            const locationElement = document.querySelector('.titleInside .fullAddress');
-            const location = locationElement ? 
-              locationElement.textContent.trim().substring(5).trim() : '';
-            
-            // Référence
-            const reference = document.querySelector('.labelInfo .hugeText')?.textContent
-              .replace('Réf. de l\'annonce : ', '') || '';
-            
-            // DPE
-            const dpeElement = document.querySelector('.dpe-line__classification > span > div:first-child');
-            const dpe = dpeElement ? dpeElement.textContent.trim() : '';
-            
-            // GES
-            const gesElement = document.querySelector('.ges-line__classification span');
-            const ges = gesElement ? gesElement.textContent.trim() : '';
-            
-            // Photos
-            const photos = Array.from(document.querySelectorAll('.slideImg'))
-              .map(slide => {
-                const secondImg = slide.querySelector('img[src]:nth-child(2)');
-                return secondImg ? secondImg.src : null;
-              })
-              .filter(src => src && src.includes('bienici.com'));
-
-            // Extraction des détails supplémentaires
-            const details = {};
-            
-            // On essaie d'extraire les chambres et salles de bain de la description
-            const descriptionText = description.toLowerCase();
-            const chambresMatch = descriptionText.match(/(\d+)\s*chambre/);
-            const sdbMatch = descriptionText.match(/(\d+)\s*(salle (de bain|d'eau)|sdb)/);
-            
-            if (chambresMatch) details.chambres = parseInt(chambresMatch[1]);
-            if (sdbMatch) details.sdb = parseInt(sdbMatch[1]);
-            
-            // Si on n'a pas trouvé de chambres, on utilise la logique précédente
-            if (!details.chambres) details.chambres = bedrooms;
-            
-            // Si on n'a pas trouvé de salles de bain, on met 1 par défaut
-            if (!details.sdb) details.sdb = 1;
-
-            return {
-              title,
-              type,
-              price,
-              surface,
-              landSurface: landSurface || null,
-              bedrooms: bedrooms || 0,
-              pieces: pieces || 0,
-              sdb: details.sdb || 0,
-              dpe,
-              ges,
-              description,
-              location,
-              reference,
-              photos,
-              url: window.location.href,
-              source: 'Bien-ici',
-              timestamp: new Date().toISOString()
-            };
-          });
-          
-          // Vérifier les données et insérer dans la base de données
-          if (property.title && property.price) {
-            await insertAnnonce({
-              type: property.type,
-              prix: property.price,
-              ville: property.location,
-              pieces: property.pieces,
-              chambres: property.bedrooms,
-              surface: property.surface,
-              description: property.description,
-              photos: property.photos,
-              agence: "Bien-ici",
-              lien: request.url,
-              dpe: property.dpe,
-              ges: property.ges
-            });
-            liensActuels.push(request.url);
-          } else {
-            log.warning(`⚠️ Bien-ici - Données incomplètes pour ${request.url}`);
-            await insertErreur("Bien-ici", request.url, "Données incomplètes");
-          }
-        } catch (err) {
-          log.error(`❌ Bien-ici - Erreur sur la page ${request.url}`, { error: String(err) });
-          await insertErreur("Bien-ici", request.url, String(err));
-        }
-      }
-    },
-
-    failedRequestHandler({ request, log }) {
-      log.error(`🚨 Bien-ici - Échec permanent pour ${request.url}`);
-    },
-  });
-
-  await crawler.run();
-
-  // Nettoyer les annonces manquantes
-  await deleteMissingAnnonces("Bien-ici", Array.from(new Set(liensActuels)));
-
-  console.log("✅ Bien-ici - Scraping Bien-ici terminé !");
+  await deleteMissingAnnonces("Bien-ici", [...new Set(liensActuels)]);
+  console.log("✅ Bien-ici - Scraping terminé !");
 };
