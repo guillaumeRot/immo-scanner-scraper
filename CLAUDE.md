@@ -184,6 +184,16 @@ await page.waitForSelector('.ui-menu-item', { timeout: 5000 });
 
 ---
 
+## Comportement attendu de l'agent
+
+Lors d'une optimisation de scraper, l'agent doit :
+
+1. **Exécuter toutes les commandes directement** sans demander de confirmation — tests SSR curl, validations Node, réécriture du fichier, restart du serveur, test en local.
+2. **Toujours demander confirmation** avant `git commit` et `git push`.
+3. **Fournir un résumé structuré** après un test local réussi : méthode choisie, sélecteurs clés, champs extraits, résultat du test (nombre d'annonces, durée, erreurs).
+
+---
+
 ## Résultats de la migration
 
 | Scraper | Avant | Après | Gain |
