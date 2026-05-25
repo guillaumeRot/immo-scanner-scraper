@@ -62,7 +62,7 @@
 | **Blot** | Playwright (optimisé) | SPA AJAX — ressources bloquées, `waitForSelector` au lieu de `networkidle` |
 | **Logic-immo** | Playwright | DataDome présent, Playwright headless fonctionne parfois |
 | **Immonot** | fetch + cheerio | Site SSR, URLs directes par ville/type |
-| **FNAIM** | Playwright | JS-heavy (instable) |
+| **FNAIM** | fetch + cheerio | Site SSR — URL de recherche directe avec paramètres encodés |
 | **Ouest-France** | Playwright | JS-heavy |
 | **Immobilier-Figaro** | Playwright | JS-heavy |
 
