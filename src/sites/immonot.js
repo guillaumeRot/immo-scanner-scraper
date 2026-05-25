@@ -1,230 +1,110 @@
-import { PlaywrightCrawler, RequestQueue } from "crawlee";
-import { chromium } from "playwright";
+import * as cheerio from "cheerio";
 import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
 
-export const immonotScraper = async () => {
-  const requestQueue = await RequestQueue.open(`immonot-${Date.now()}`);
+const BASE_URL = "https://www.immonot.com";
+const HEADERS = {
+  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
+  "Accept-Language": "fr-FR,fr;q=0.9",
+};
 
-  // On démarre par la première page des annonces
-  await requestQueue.addRequest({
-    url: "https://www.immonot.com/immobilier.do",
-    userData: { label: "LIST_PAGE" },
+const LIST_URLS = [
+  `${BASE_URL}/recherche-annonces-par-ville/VENT/MAIS/35/35500-vitre/Achat-Maison-ille-et-vilaine-35500-vitre.html`,
+  `${BASE_URL}/recherche-annonces-par-ville/VENT/IMMR/35/35500-vitre/Achat-Immeuble-ille-et-vilaine-35500-vitre.html`,
+  `${BASE_URL}/recherche-annonces-par-ville/VENT/MAIS/35/35410-chateaugiron/Achat-Maison-ille-et-vilaine-35410-chateaugiron.html`,
+  `${BASE_URL}/recherche-annonces-par-ville/VENT/IMMR/35/35410-chateaugiron/Achat-Immeuble-ille-et-vilaine-35410-chateaugiron.html`,
+];
+
+async function fetchHtml(url, retries = 3) {
+  for (let i = 0; i < retries; i++) {
+    if (i > 0) await new Promise(r => setTimeout(r, 2000 * i));
+    try {
+      const res = await fetch(url, { headers: HEADERS });
+      if (res.ok) return res.text();
+    } catch (e) {
+      if (i === retries - 1) throw e;
+    }
+  }
+  throw new Error(`HTTP fetch failed for ${url}`);
+}
+
+async function scrapeListPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+  const links = [];
+  $("a.js-mirror-link").each((_, el) => {
+    const href = $(el).attr("href");
+    if (href) links.push(href.startsWith("http") ? href : BASE_URL + href);
+  });
+  const nextHref = $('a.page-link[rel="next"]').attr("href");
+  const nextUrl = nextHref ? (nextHref.startsWith("http") ? nextHref : BASE_URL + nextHref) : null;
+  return { links, nextUrl };
+}
+
+function getSpec($, label) {
+  let value = "";
+  $("dl.id-spec").each((_, el) => {
+    if ($(el).find("dt").text().trim() === label) {
+      // Use first text node to avoid concatenation with <sup>2</sup> in surface fields
+      value = $(el).find("dd").contents().first().text().trim();
+    }
+  });
+  return value;
+}
+
+async function scrapeDetailPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  const typeRaw = $(".id-title-type").first().text().trim().toLowerCase();
+  const type = typeRaw.includes("immeuble") ? "immeuble" : "maison";
+  const prix = parseInt($(".id-price-amount").first().text().replace(/\D/g, "")) || 0;
+  const ville = $(".id-title-location").first().text().trim();
+  const description = $(".id-desc-body").first().text().trim();
+  const surface = parseFloat(getSpec($, "Surface habitable")) || 0;
+  const pieces = parseInt(getSpec($, "Pièces")) || 0;
+  const chambres = parseInt(getSpec($, "Chambres")) || 0;
+
+  const photos = [];
+  $("#js-lightgallery a").each((_, el) => {
+    const href = $(el).attr("href");
+    if (href && !href.startsWith("#")) {
+      photos.push(href.startsWith("//") ? "https:" + href : href);
+    }
   });
 
+  return { type, prix, ville, surface, pieces, chambres, description, photos, dpe: null, ges: null };
+}
+
+export const immonotScraper = async () => {
   const liensActuels = [];
 
-  const crawler = new PlaywrightCrawler({
-    requestQueue,
-    maxConcurrency: 1, // équilibre vitesse / RAM
-    requestHandlerTimeoutSecs: 180,
-    navigationTimeoutSecs: 30,
-    launchContext: {
-      launcher: chromium,
-      launchOptions: {
-        headless: true,
-        args: [
-          "--no-sandbox",
-          "--disable-setuid-sandbox",
-          "--disable-dev-shm-usage",
-          "--disable-gpu",
-          "--single-process",
-          "--no-zygote",
-        ],
-      },
-    },
+  for (const startUrl of LIST_URLS) {
+    let currentUrl = startUrl;
+    while (currentUrl) {
+      const { links, nextUrl } = await scrapeListPage(currentUrl);
+      console.log(`📌 Immonot - ${links.length} annonces sur ${currentUrl}`);
 
-    async requestHandler({ page, request, log }) {
-      const { label } = request.userData;
-
-      // 🧭 Étape 1 — Pages de liste
-      if (label === "LIST_PAGE") {
-        log.info(`🔎 Immonot - Page de liste : ${request.url}`);
-
-        await page.goto(request.url);
-        await page.waitForLoadState("networkidle", { timeout: 60000 });
-
-        // Accepter cookies si présent
-        await page
-          .getByRole("button", { name: "Accepter", exact: true })
-          .click({ timeout: 5000 })
-          .catch(() => {});
-        await page.waitForLoadState("networkidle", { timeout: 30000 });
-
-        // Si c’est la première page, appliquer les filtres
-        if (request.url === "https://www.immonot.com/immobilier.do") {
-          try {
-            log.info("⚙️  Immonot - Application des filtres Immonot...");
-
-            // Zone de recherche
-            log.info("🔍 Configuration de la recherche pour Vitré et Châteaugiron...");
-            await page.waitForTimeout(3000);
-
-            await page.locator('span.il-search-item-resume[data-rel="localite"]').click();
-            await page.waitForTimeout(1000);
-            
-            // Attendre et remplir le champ de recherche
-            const input = page.locator('.il-search-box.visible .x-form-autocomplete[data-rel="localite"] input.y-ac-input[type="text"]');
-            await input.waitFor({ state: 'visible', timeout: 15000 });
-            await input.click();
-            await input.fill("");
-            await page.waitForTimeout(1000);
-
-            // Saisie de la première ville
-            log.info("🏙️  Ajout de Vitré...");
-            await input.type("Vitré", { delay: 100 });
-            
-            // Attendre et sélectionner Vitré
-            const suggestionVitre = page.locator('li[data-type="commune"]', { hasText: "Vitré" }).first();
-            await suggestionVitre.waitFor({ state: 'visible', timeout: 10000 });
-            await suggestionVitre.click();
-            
-            // Vérifier que Vitré est bien sélectionné
-            await page.waitForFunction(
-                () => {
-                    const elements = Array.from(document.querySelectorAll('.y-ac-tag-city'));
-                    return elements.some(el => el.textContent.includes('Vitré'));
-                },
-                null,
-                { timeout: 10000 }
-            );
-            log.info("✅ Vitré correctement sélectionné");
-
-            // Ajout de la deuxième ville
-            log.info("🏙️  Ajout de Châteaugiron...");
-            await input.click();
-            await input.fill("");
-            await input.type("Chateaugiron", { delay: 100 });
-            
-            // Attendre et sélectionner Châteaugiron
-            const suggestionChateaugiron = page.locator('li[data-type="commune"]', { hasText: "Châteaugiron" }).first();
-            await suggestionChateaugiron.waitFor({ state: 'visible', timeout: 10000 });
-            await suggestionChateaugiron.click();
-            
-            // Vérifier que Châteaugiron est bien sélectionné
-            await page.waitForFunction(
-                () => {
-                    const elements = Array.from(document.querySelectorAll('.y-ac-tag-city'));
-                    return elements.some(el => el.textContent.includes('Châteaugiron'));
-                },
-                null,
-                { timeout: 10000 }
-            );
-            log.info("✅ Châteaugiron correctement sélectionné");
-            
-            // Attendre un peu pour être sûr que tout est chargé
-            await page.waitForTimeout(2000);
-
-            // Type d'annonce
-            await page.getByText('Aucune sélection').nth(3).click();
-            await page.locator('#js-search').getByText('Achat').click();
-
-            // Type de bien
-            await page.locator('#js-search').getByText('Aucune sélection').click();
-            await page.locator('#js-search').getByText('Maisons').click();
-            await page.locator('#js-search').getByText('Afficher plus').click();
-            await page.locator('#js-search').getByText('Immeubles').click();
-
-            // Filtre prix max
-            await page.locator('span.il-search-item-resume[data-rel="prix"]').click();
-            await page.waitForTimeout(1000);
-            
-            // Remplir le prix maximum
-            const maxPriceInput = page.locator('.il-search-box.visible .x-form-slider[data-rel="prix"] input.js-max[type="number"]');
-            await maxPriceInput.click();
-            await maxPriceInput.fill('400000');
-            await maxPriceInput.press('Enter');
-            await page.waitForTimeout(1000);
-            
-            // Lancer la recherche
-            await page.locator('button.il-search-btn.js-search-update').click();
-            // await page.waitForLoadState("networkidle", { timeout: 60000 });
-            log.info("✅ Immonot - Filtres appliqués et résultats chargés.");
-
-            // Récupération des annonces de la page
-            const links = await page.$$eval(".il-card a.js-mirror-link", (els) =>
-              els.map((a) => a.href)
-            );
-
-            log.info(`📌 Immonot - ${links.length} annonces trouvées sur cette page.`);
-
-            // Ajoute chaque lien dans la file pour traitement détail
-            for (const url of links) {
-              await requestQueue.addRequest({ url, userData: { label: "DETAIL_PAGE" } });
-            }
-
-            // Gestion pagination
-            const nextUrl = await page
-              .$eval("a.page-link[rel='next']", (el) => el?.href)
-              .catch(() => null);
-
-            if (nextUrl) {
-              log.info("➡️ Immonot - Page suivante détectée, ajout dans la file...");
-              await requestQueue.addRequest({ url: nextUrl, userData: { label: "LIST_PAGE" } });
-            } else {
-              log.info("✅ Immonot - Fin de la pagination détectée.");
-            }
-
-          } catch (e) {
-            log.error("❌ Immonot - Erreur lors du chargement des résultats avec filtres", { error: String(e) });
-            await insertErreur("Immonot", request.url, String(e));
-          }
-        }
-      }
-
-      // 🏡 Étape 2 — Pages de détail
-      if (label === "DETAIL_PAGE") {
+      for (const url of links) {
         try {
-          log.info(`📄 Immonot - Page détail : ${request.url}`);
-
-          await page.goto(request.url, { waitUntil: "domcontentloaded", timeout: 15000 });
-
-          const annonce = await page.evaluate(() => {
-            const title = document.querySelector(".id-title-type")?.textContent?.trim();
-            const price = document.querySelector(".id-price-amount")?.textContent?.trim();
-            const ville = document.querySelector(".id-title-location")?.textContent?.trim();
-            const desc =
-              document.querySelector(".id-desc-body")?.textContent?.trim() || "";
-
-            const photos = Array.from(document.querySelectorAll("#js-lightgallery a"))
-              .map((a) => a.getAttribute("href"))
-              .filter((u) => !!u)
-              .map((u) => (u.startsWith("//") ? "https:" + u : u));
-
-            return { title, price, ville, desc, photos };
-          });
-
-          if (annonce && annonce.title) {
-            await insertAnnonce({
-              type: annonce.title,
-              prix: annonce.price,
-              ville: annonce.ville,
-              description: annonce.desc,
-              photos: annonce.photos,
-              agence: "Immonot",
-              lien: request.url,
-            });
-
-            liensActuels.push(request.url);
-            log.info(`✅ Immonot - Annonce insérée : ${request.url}`);
-          } else {
-            log.warning(`⚠️ Immonot - Données incomplètes pour ${request.url}`);
+          const data = await scrapeDetailPage(url);
+          if (data.ville && data.prix && data.prix <= 400000) {
+            await insertAnnonce({ ...data, agence: "Immonot", lien: url });
+            liensActuels.push(url);
+          } else if (!data.ville || !data.prix) {
+            console.warn(`⚠️ Immonot - Données incomplètes pour ${url}`);
+            await insertErreur("Immonot", url, "Données incomplètes (ville ou prix manquant)");
           }
         } catch (err) {
-          log.error(`❌ Immonot - Erreur sur la page ${request.url}`, { error: String(err) });
-          await insertErreur("Immonot", request.url, String(err));
+          console.error(`❌ Immonot - Erreur sur ${url}: ${err.message}`);
+          await insertErreur("Immonot", url, String(err));
         }
+        await new Promise(r => setTimeout(r, 300));
       }
-    },
+      currentUrl = nextUrl;
+    }
+  }
 
-    failedRequestHandler({ request, log }) {
-      log.error(`🚨 Immonot - Échec permanent pour ${request.url}`);
-    },
-  });
-
-  await crawler.run();
-
-  // Nettoyer les annonces manquantes
-  await deleteMissingAnnonces("Immonot", Array.from(new Set(liensActuels)));
-
-  console.log("✅ Immonot - Scraping Immonot terminé !");
+  await deleteMissingAnnonces("Immonot", [...new Set(liensActuels)]);
+  console.log("✅ Immonot - Scraping terminé !");
 };

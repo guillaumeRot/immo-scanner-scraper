@@ -44,11 +44,10 @@ app.get('/run-scrapers', async (req, res) => {
       const startTime = Date.now();
       await initDb();
 
-      // if (scraper === "immonot") {
-      //   await immonotScraper();
-        // await updateScanTable("Immonot", startTime);
-      // } else 
-      if (scraper === "kermarrec") {
+      if (scraper === "immonot") {
+        await immonotScraper();
+        await updateScanTable("Immonot", startTime);
+      } else if (scraper === "kermarrec") {
         await kermarrecScraper();
         await updateScanTable("Kermarrec", startTime);
       } else if (scraper === "era") {
