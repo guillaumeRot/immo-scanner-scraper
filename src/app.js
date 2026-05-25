@@ -17,6 +17,7 @@ import { figaroImmobilierScraper } from './sites/immobilier-figaro.js';
 import { acheterLouerScraper } from './sites/acheter-louer.js';
 import { bienIciScraper } from './sites/bien-ici.js';
 import { fnaimScraper } from './sites/fnaim.js';
+import { ouestFranceScraper } from './sites/ouest-france.js';
 const app = express();
 
 // Évite les exécutions concurrentes
@@ -93,6 +94,9 @@ app.get('/run-scrapers', async (req, res) => {
       } else if (scraper === "fnaim") {
         await fnaimScraper();
         await updateScanTable("FNAIM", startTime);
+      } else if (scraper === "ouest-france") {
+        await ouestFranceScraper();
+        await updateScanTable("Ouest-France Immo", startTime);
       } else {
         // Liste des scrapers avec leurs noms d'API
         const scrapers = [
@@ -110,7 +114,8 @@ app.get('/run-scrapers', async (req, res) => {
           { name: "figaro-immobilier", displayName: "Figaro Immobilier" },
           { name: "acheter-louer", displayName: "Acheter-louer" },
           { name: "immonot", displayName: "Immonot" },
-          { name: "fnaim", displayName: "FNAIM" }
+          { name: "fnaim", displayName: "FNAIM" },
+          { name: "ouest-france", displayName: "Ouest-France Immo" }
         ];
 
         // Exécution séquentielle des appels HTTP pour chaque scraper
