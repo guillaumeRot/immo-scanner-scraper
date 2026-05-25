@@ -203,6 +203,9 @@ Lors d'une optimisation de scraper, l'agent doit :
 | Blot | Playwright | Playwright optimisé | ~2x plus rapide |
 | Carnot | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
 | Diard | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
+| Immonot | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
+| FNAIM | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
+| Ouest-France | Playwright | fetch+cheerio | ~300MB RAM, ~30s |
 
 ---
 
@@ -226,7 +229,9 @@ curl -s "<URL>" -A "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/
 
 ## Sites restants à analyser
 
-Dans `src/sites/` : `boyer.js`, `bretilimmo.js`, `penn.js`, `century.js`, `notaires-bretons.js`, `immobilier-notaires.js`, `immonot.js`, `fnaim.js`, `acheter-louer.js`, `bien-ici.js`, `logic-immo.js`, `ouest-france.js`, `immobilier-figaro.js`
+Dans `src/sites/` : `acheter-louer.js`, `bien-ici.js`, `logic-immo.js`, `immobilier-figaro.js`
+
+**Déjà migrés :** `kermarrec.js`, `era.js`, `blot.js` (optimisé), `carnot.js`, `diard.js`, `boyer.js`, `bretilimmo.js`, `penn.js`, `century.js`, `notaires-bretons.js`, `immobilier-notaires.js`, `immonot.js`, `fnaim.js`, `ouest-france.js`
 
 Les petites agences locales (Boyer, Bretilimmo, Carnot, Diard, Penn) sont probablement des sites WordPress/SSR → bons candidats pour fetch+cheerio.
 
