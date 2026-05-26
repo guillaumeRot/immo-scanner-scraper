@@ -1,13 +1,23 @@
 import { PlaywrightCrawler, RequestQueue } from "crawlee";
 import { chromium } from "playwright";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
-
-const LIST_URL =
-  "http://immobilier.lefigaro.fr/annonces/immobilier-vente-maison-vitre+35500.html" +
-  "?types=maison%2Bneuve,atelier,chalet,chambre%2Bd%2Bhote,manoir,moulin,propriete,ferme,gite,villa,immeuble" +
-  "&priceMax=400000&location=chateaugiron%2B35410";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 export const figaroImmobilierScraper = async () => {
+  const villeRows = await getVilleParams("figaro");
+  if (!villeRows.length) {
+    console.warn("⚠️ Figaro Immobilier - Aucune ville configurée en base");
+    return;
+  }
+  // La première ville va dans le path, les suivantes en param `location`
+  const [primary, ...others] = villeRows;
+  const locationSuffix = others.length
+    ? "&location=" + others.map(r => r.params.path_slug.replace(/\+/g, "%2B")).join(",")
+    : "";
+  const LIST_URL =
+    `http://immobilier.lefigaro.fr/annonces/immobilier-vente-maison-${primary.params.path_slug}.html` +
+    `?types=maison%2Bneuve,atelier,chalet,chambre%2Bd%2Bhote,manoir,moulin,propriete,ferme,gite,villa,immeuble` +
+    `&priceMax=400000${locationSuffix}`;
+
   const requestQueue = await RequestQueue.open(`figaro-immobilier-${Date.now()}`);
   await requestQueue.addRequest({ url: LIST_URL, userData: { label: "LIST_PAGE" } });
 

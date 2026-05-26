@@ -1,10 +1,7 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.notaireetbreton.bzh";
-const LIST_URL =
-  `${BASE_URL}/biens/achat/immeuble%2Cmaison-individuelle/vitre-35500` +
-  `?field_price_value%5Bmax%5D=400000&sort_bef_combine=field_price_value_ASC&display-mode=list`;
 
 const HEADERS = {
   "User-Agent":
@@ -62,8 +59,18 @@ async function scrapeDetailPage(url) {
 }
 
 export const notairesBretonsScraper = async () => {
+  const villeRows = await getVilleParams("notaires-bretons");
+  if (!villeRows.length) {
+    console.warn("⚠️ Notaires Bretons - Aucune ville configurée en base");
+    return;
+  }
+
   const liensActuels = [];
-  let currentUrl = LIST_URL;
+
+  for (const row of villeRows) {
+  let currentUrl =
+    `${BASE_URL}/biens/achat/immeuble%2Cmaison-individuelle/${row.params.slug}` +
+    `?field_price_value%5Bmax%5D=400000&sort_bef_combine=field_price_value_ASC&display-mode=list`;
 
   while (currentUrl) {
     console.log(`🔎 Notaires Bretons - Page de liste : ${currentUrl}`);
@@ -103,6 +110,7 @@ export const notairesBretonsScraper = async () => {
 
     currentUrl = nextUrl;
   }
+  } // fin boucle villes
 
   await deleteMissingAnnonces("Notaires et Bretons", Array.from(new Set(liensActuels)));
   console.log("✅ Notaires Bretons - Scraping terminé !");

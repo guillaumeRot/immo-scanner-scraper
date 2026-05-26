@@ -1,13 +1,13 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.boyer-immobilier.fr";
-const LIST_URL =
+const BASE_LIST_URL =
   `${BASE_URL}/catalog/advanced_search_result.php?action=update_search` +
   `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Vente` +
   `&C_27_search=EGAL&C_27_type=TEXT&C_27=2%2C6` +
   `&C_30_search=COMPRIS&C_30_type=NUMBER&C_30_MAX=400000` +
-  `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=35500+VITRE`;
+  `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
 
 const HEADERS = {
   "User-Agent":
@@ -77,8 +77,16 @@ async function scrapeDetailPage(url) {
 }
 
 export const boyerScraper = async () => {
+  const villeRows = await getVilleParams("boyer");
+  if (!villeRows.length) {
+    console.warn("⚠️ Boyer - Aucune ville configurée en base");
+    return;
+  }
+
   const liensActuels = [];
-  let currentUrl = LIST_URL;
+
+  for (const row of villeRows) {
+  let currentUrl = BASE_LIST_URL + row.params.C_65;
 
   while (currentUrl) {
     console.log(`🔎 Boyer - Page de liste : ${currentUrl}`);
@@ -118,6 +126,7 @@ export const boyerScraper = async () => {
 
     currentUrl = nextUrl;
   }
+  } // fin boucle villes
 
   await deleteMissingAnnonces("Boyer Immobilier", Array.from(new Set(liensActuels)));
   console.log("✅ Boyer - Scraping terminé !");

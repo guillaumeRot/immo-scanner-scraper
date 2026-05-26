@@ -1,10 +1,6 @@
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_API = "https://www.immobilier.notaires.fr/pub-services/inotr-www-annonces/v1/annonces";
-// localites: 16149=Vitré 35500, 15867=Châteaugiron 35410
-const LIST_URL =
-  `${BASE_API}?parPage=100&prixMax=400000&localites=16149,15867` +
-  `&typeTransaction=VENTE,VNI,VAE&typeBien=MAI,IMM`;
 
 const HEADERS = {
   "User-Agent":
@@ -32,6 +28,16 @@ async function fetchDetailData(annonceId) {
 }
 
 export const immobilierNotairesScraper = async () => {
+  const villeRows = await getVilleParams("immobilier-notaires");
+  if (!villeRows.length) {
+    console.warn("⚠️ Immobilier Notaires - Aucune ville configurée en base");
+    return;
+  }
+  const localites = villeRows.map(r => r.params.localite_id).join(",");
+  const LIST_URL =
+    `${BASE_API}?parPage=100&prixMax=400000&localites=${localites}` +
+    `&typeTransaction=VENTE,VNI,VAE&typeBien=MAI,IMM`;
+
   const liensActuels = [];
 
   console.log(`🔎 Immobilier Notaires - Récupération des annonces...`);

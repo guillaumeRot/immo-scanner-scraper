@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.fnaim.fr";
 const HEADERS = {
@@ -7,9 +7,6 @@ const HEADERS = {
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "fr-FR,fr;q=0.9",
 };
-
-const LIST_URL =
-  "https://www.fnaim.fr/17-acheter.htm?localites=%5B%7B%22id%22%3A%2220583%22%2C%22label%22%3A%22VITRE+%2835500%29%22%2C%22type%22%3A%223%22%2C%22code%22%3A%2235500%22%2C%22insee%22%3A%2235360%22%2C%22value%22%3A%22VITRE+%2835500%29%22%7D%2C%7B%22id%22%3A%2231189%22%2C%22label%22%3A%22CHATEAUGIRON+%2835410%29%22%2C%22type%22%3A%223%22%2C%22code%22%3A%2235410%22%2C%22insee%22%3A%2235069%22%2C%22value%22%3A%22CHATEAUGIRON+%2835410%29%22%7D%5D&PRIX_MAX=400000&TYPE%5B%5D=2&TYPE%5B%5D=9&idtf=17&TRANSACTION=1&submit=Rechercher";
 
 async function fetchHtml(url, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -84,6 +81,16 @@ async function scrapeDetailPage(url) {
 }
 
 export const fnaimScraper = async () => {
+  const villeRows = await getVilleParams("fnaim");
+  if (!villeRows.length) {
+    console.warn("⚠️ FNAIM - Aucune ville configurée en base");
+    return;
+  }
+  const localites = villeRows.map(r => r.params);
+  const LIST_URL =
+    `${BASE_URL}/17-acheter.htm?localites=${encodeURIComponent(JSON.stringify(localites))}` +
+    `&PRIX_MAX=400000&TYPE%5B%5D=2&TYPE%5B%5D=9&idtf=17&TRANSACTION=1&submit=Rechercher`;
+
   const liensActuels = [];
   let currentUrl = LIST_URL;
 

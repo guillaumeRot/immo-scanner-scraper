@@ -1,19 +1,18 @@
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
-const ZONE_IDS = ["-106682", "-6837759"]; // Vitré 35500, Châteaugiron 35410
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   "Referer": "https://www.bienici.com/",
   "Accept": "application/json",
 };
 
-async function fetchPage(from, size = 100) {
+async function fetchPage(from, zoneIds, size = 100) {
   const filters = {
     size, from,
     filterType: "buy",
     propertyType: ["house", "building"],
     maxPrice: 400000,
-    zoneIdsByTypes: { zoneIds: ZONE_IDS },
+    zoneIdsByTypes: { zoneIds },
     sortBy: "publicationDate",
     sortOrder: "desc",
   };
@@ -41,13 +40,20 @@ function parseAd(ad) {
 }
 
 export const bienIciScraper = async () => {
+  const villeRows = await getVilleParams("bienici");
+  if (!villeRows.length) {
+    console.warn("⚠️ Bien-ici - Aucune ville configurée en base");
+    return;
+  }
+  const zoneIds = villeRows.map(r => r.params.zone_id);
+
   const liensActuels = [];
   const size = 100;
   let from = 0;
   let total = Infinity;
 
   while (from < total) {
-    const json = await fetchPage(from, size);
+    const json = await fetchPage(from, zoneIds, size);
     total = json.total;
     const ads = json.realEstateAds || [];
     console.log(`📌 Bien-ici - ${from + ads.length}/${total} annonces récupérées`);

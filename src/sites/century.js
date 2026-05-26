@@ -1,8 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
-
-const LIST_URL =
-  "https://www.century21.fr/annonces/f/achat-maison-immeuble-ancien/v-chateaugiron/cpv-35500_vitre/s-0-/st-0-/b-0-400000/?cible=cpv-35500_vitre";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -67,6 +64,18 @@ async function scrapeDetailPage(url) {
 }
 
 export const centuryScraper = async () => {
+  const villeRows = await getVilleParams("century");
+  if (!villeRows.length) {
+    console.warn("⚠️ Century 21 - Aucune ville configurée en base");
+    return;
+  }
+  // Century21 exige l'ordre : segments "v-*" avant "cpv-*"
+  const sorted   = [...villeRows].sort((a, b) => a.params.segment.startsWith("v-") ? -1 : 1);
+  const segments = sorted.map(r => r.params.segment).join("/");
+  const cibleRow  = villeRows.find(r => r.params.cible) || villeRows[0];
+  const LIST_URL  =
+    `https://www.century21.fr/annonces/f/achat-maison-immeuble-ancien/${segments}/s-0-/st-0-/b-0-400000/?cible=${cibleRow.params.segment}`;
+
   const liensActuels = [];
   let currentUrl = LIST_URL;
 

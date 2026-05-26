@@ -7,6 +7,8 @@ let pool = null;
 let client = null;
 
 export async function initDb() {
+  if (pool && client) return; // déjà connecté
+
   try {
     const url = process.env.DATABASE_URL;
     if (!url || typeof url !== "string") {
@@ -95,6 +97,95 @@ async function ensureTablesExists() {
 
   await client.query(createScanTableQuery);
   console.log("✅ Table 'Scan' vérifiée/créée");
+
+  const createVillesTableQuery = `
+    CREATE TABLE IF NOT EXISTS "Villes" (
+      id SERIAL PRIMARY KEY,
+      nom VARCHAR(100) NOT NULL UNIQUE,
+      code_postal VARCHAR(10) NOT NULL,
+      actif BOOLEAN DEFAULT TRUE
+    );
+
+    CREATE TABLE IF NOT EXISTS "VilleScraperParams" (
+      id SERIAL PRIMARY KEY,
+      ville_id INTEGER NOT NULL REFERENCES "Villes"(id) ON DELETE CASCADE,
+      scraper VARCHAR(50) NOT NULL,
+      params JSONB NOT NULL,
+      UNIQUE(ville_id, scraper)
+    );
+  `;
+
+  await client.query(createVillesTableQuery);
+  console.log("✅ Tables 'Villes' et 'VilleScraperParams' vérifiées/créées");
+
+  await seedVilles();
+}
+
+async function seedVilles() {
+  await client.query(`
+    INSERT INTO "Villes" (nom, code_postal) VALUES
+      ('Vitré', '35500'),
+      ('Châteaugiron', '35410')
+    ON CONFLICT (nom) DO NOTHING
+  `);
+
+  const vitre        = (await client.query(`SELECT id FROM "Villes" WHERE nom = 'Vitré'`)).rows[0].id;
+  const chateaugiron = (await client.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaugiron'`)).rows[0].id;
+
+  const entries = [
+    [vitre,        "acheter-louer",       { loc: "vitre",             cityZip: "35500" }],
+    [chateaugiron, "acheter-louer",       { loc: "chateaugiron",      cityZip: "35410" }],
+    [vitre,        "bienici",             { zone_id: "-106682" }],
+    [chateaugiron, "bienici",             { zone_id: "-6837759" }],
+    [vitre,        "blot",                { nom_input: "Vitré",        label: "VITRE (35500)" }],
+    [chateaugiron, "blot",                { nom_input: "Chateaugiron", label: "CHATEAUGIRON (35410)" }],
+    [vitre,        "boyer",               { C_65: "35500+VITRE" }],
+    [vitre,        "bretilimmo",          { slug: "vitre" }],
+    [vitre,        "carnot",              { slug: "vitre-35500" }],
+    [vitre,        "century",             { segment: "cpv-35500_vitre",    cible: true }],
+    [chateaugiron, "century",             { segment: "v-chateaugiron",     cible: false }],
+    [vitre,        "era",                 { era_id: "Vitre-c27606" }],
+    [chateaugiron, "era",                 { era_id: "Chateaugiron-c15629" }],
+    [vitre,        "figaro",              { path_slug: "vitre+35500" }],
+    [chateaugiron, "figaro",              { path_slug: "chateaugiron+35410" }],
+    [vitre,        "fnaim",               { id: "20583",  label: "VITRE (35500)",        type: "3", code: "35500", insee: "35360", value: "VITRE (35500)" }],
+    [chateaugiron, "fnaim",               { id: "31189",  label: "CHATEAUGIRON (35410)", type: "3", code: "35410", insee: "35069", value: "CHATEAUGIRON (35410)" }],
+    [vitre,        "immobilier-notaires", { localite_id: "16149" }],
+    [chateaugiron, "immobilier-notaires", { localite_id: "15867" }],
+    [vitre,        "immonot",             { dept: "35", code_postal: "35500", slug: "vitre" }],
+    [chateaugiron, "immonot",             { dept: "35", code_postal: "35410", slug: "chateaugiron" }],
+    [vitre,        "kermarrec",           { slug: "vitre-35500",        nom: "vitre" }],
+    [chateaugiron, "kermarrec",           { slug: "chateaugiron-35410", nom: "chateaugiron", is_primary: true }],
+    [vitre,        "logic-immo",          { location_code: "AD08FR14276" }],
+    [chateaugiron, "logic-immo",          { location_code: "AD08FR13990" }],
+    [vitre,        "notaires-bretons",    { slug: "vitre-35500" }],
+    [vitre,        "ouest-france",        { lieu_id: "15942" }],
+    [chateaugiron, "ouest-france",        { lieu_id: "15645" }],
+  ];
+
+  for (const [ville_id, scraper, p] of entries) {
+    await client.query(
+      `INSERT INTO "VilleScraperParams" (ville_id, scraper, params)
+       VALUES ($1, $2, $3)
+       ON CONFLICT (ville_id, scraper) DO NOTHING`,
+      [ville_id, scraper, JSON.stringify(p)]
+    );
+  }
+
+  console.log("✅ Données seed 'Villes' et 'VilleScraperParams' vérifiées");
+}
+
+export async function getVilleParams(scraper) {
+  if (!client) throw new Error("Client non initialisé");
+  const result = await client.query(
+    `SELECT v.nom, v.code_postal, vsp.params
+     FROM "VilleScraperParams" vsp
+     JOIN "Villes" v ON vsp.ville_id = v.id
+     WHERE vsp.scraper = $1 AND v.actif = TRUE
+     ORDER BY v.id`,
+    [scraper]
+  );
+  return result.rows;
 }
 
 // Villes supportées avec leurs variantes

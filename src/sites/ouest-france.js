@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.ouestfrance-immo.com";
 const HEADERS = {
@@ -13,8 +13,6 @@ const HEADERS = {
   "Sec-Fetch-User": "?1",
   "Upgrade-Insecure-Requests": "1",
 };
-
-const LIST_URL = `${BASE_URL}/acheter/?prix=0_400000&types=maison,immeuble&lieux=15942,15645`;
 
 async function fetchHtml(url, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -97,6 +95,14 @@ async function scrapeDetailPage(url) {
 }
 
 export const ouestFranceScraper = async () => {
+  const villeRows = await getVilleParams("ouest-france");
+  if (!villeRows.length) {
+    console.warn("⚠️ Ouest-France Immo - Aucune ville configurée en base");
+    return;
+  }
+  const lieux    = villeRows.map(r => r.params.lieu_id).join(",");
+  const LIST_URL = `${BASE_URL}/acheter/?prix=0_400000&types=maison,immeuble&lieux=${lieux}`;
+
   const liensActuels = [];
   let currentUrl = LIST_URL;
 

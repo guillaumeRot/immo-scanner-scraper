@@ -1,8 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
-
-const LIST_URL =
-  "https://www.carnotimmo.com/recherche-de-bien/?status=vente&type%5B%5D=maison&location=vitre-35500";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -79,8 +76,16 @@ async function scrapeDetailPage(url) {
 }
 
 export const carnotScraper = async () => {
+  const villeRows = await getVilleParams("carnot");
+  if (!villeRows.length) {
+    console.warn("⚠️ Carnot - Aucune ville configurée en base");
+    return;
+  }
+
   const liensActuels = [];
-  let currentUrl = LIST_URL;
+
+  for (const row of villeRows) {
+  let currentUrl = `https://www.carnotimmo.com/recherche-de-bien/?status=vente&type%5B%5D=maison&location=${row.params.slug}`;
 
   while (currentUrl) {
     console.log(`🔎 Carnot - Page de liste : ${currentUrl}`);
@@ -120,6 +125,7 @@ export const carnotScraper = async () => {
 
     currentUrl = nextUrl;
   }
+  } // fin boucle villes
 
   await deleteMissingAnnonces("Carnot", Array.from(new Set(liensActuels)));
   console.log("✅ Carnot - Scraping terminé !");

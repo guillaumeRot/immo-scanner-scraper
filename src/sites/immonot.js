@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.immonot.com";
 const HEADERS = {
@@ -7,13 +7,6 @@ const HEADERS = {
   "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,*/*;q=0.8",
   "Accept-Language": "fr-FR,fr;q=0.9",
 };
-
-const LIST_URLS = [
-  `${BASE_URL}/recherche-annonces-par-ville/VENT/MAIS/35/35500-vitre/Achat-Maison-ille-et-vilaine-35500-vitre.html`,
-  `${BASE_URL}/recherche-annonces-par-ville/VENT/IMMR/35/35500-vitre/Achat-Immeuble-ille-et-vilaine-35500-vitre.html`,
-  `${BASE_URL}/recherche-annonces-par-ville/VENT/MAIS/35/35410-chateaugiron/Achat-Maison-ille-et-vilaine-35410-chateaugiron.html`,
-  `${BASE_URL}/recherche-annonces-par-ville/VENT/IMMR/35/35410-chateaugiron/Achat-Immeuble-ille-et-vilaine-35410-chateaugiron.html`,
-];
 
 async function fetchHtml(url, retries = 3) {
   for (let i = 0; i < retries; i++) {
@@ -77,6 +70,16 @@ async function scrapeDetailPage(url) {
 }
 
 export const immonotScraper = async () => {
+  const villeRows = await getVilleParams("immonot");
+  if (!villeRows.length) {
+    console.warn("⚠️ Immonot - Aucune ville configurée en base");
+    return;
+  }
+  const LIST_URLS = villeRows.flatMap(r => [
+    `${BASE_URL}/recherche-annonces-par-ville/VENT/MAIS/${r.params.dept}/${r.params.code_postal}-${r.params.slug}/Achat-Maison-ille-et-vilaine-${r.params.code_postal}-${r.params.slug}.html`,
+    `${BASE_URL}/recherche-annonces-par-ville/VENT/IMMR/${r.params.dept}/${r.params.code_postal}-${r.params.slug}/Achat-Immeuble-ille-et-vilaine-${r.params.code_postal}-${r.params.slug}.html`,
+  ]);
+
   const liensActuels = [];
 
   for (const startUrl of LIST_URLS) {

@@ -133,7 +133,6 @@ app.get('/run-scrapers', async (req, res) => {
         await updateScanTable("All", startTime);
       }
       
-      await closeDb();
       res.json({ status: "running", message: "Scrapers " + scraper + " démarrés." });
     } catch (e) {
       console.error("❌ Erreur dans /run-scrapers:", e);
@@ -145,4 +144,7 @@ app.get('/run-scrapers', async (req, res) => {
 );
 
 const port = process.env.PORT || 8080;
-app.listen(port, () => console.log(`✅ API active sur port ${port}`));
+app.listen(port, async () => {
+  console.log(`✅ API active sur port ${port}`);
+  await initDb();
+});

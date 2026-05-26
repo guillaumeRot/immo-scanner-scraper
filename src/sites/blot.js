@@ -1,8 +1,14 @@
 import { PlaywrightCrawler, RequestQueue } from "crawlee";
 import { chromium } from "playwright";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 export const blotScraper = async () => {
+  const villeRows = await getVilleParams("blot");
+  if (!villeRows.length) {
+    console.warn("⚠️ Blot - Aucune ville configurée en base");
+    return;
+  }
+
   const requestQueue = await RequestQueue.open(`blot-${Date.now()}`);
 
   // On démarre par la première page des annonces
@@ -80,19 +86,14 @@ export const blotScraper = async () => {
             await page.waitForSelector('label[for="immeuble"]', { visible: true, timeout: 10000 });
             await page.check('label[for="immeuble"]');
 
-            // Remplir la localisation (Vitré)
-            await page.waitForSelector('input#city', { visible: true });
-            await page.fill('input#city', 'Vitré');
-            await page.waitForTimeout(1000);
-            await page.waitForSelector('.ui-menu-item', { timeout: 5000 });
-            await page.click('li:has(a:has-text("VITRE (35500)"))');
-
-              // Remplir la localisation (Chateaugiron)
-            await page.waitForSelector('input#city', { visible: true });
-            await page.fill('input#city', 'Chateaugiron');
-            await page.waitForTimeout(1000);
-            await page.waitForSelector('.ui-menu-item', { timeout: 5000 });
-            await page.click('li:has(a:has-text("CHATEAUGIRON (35410)"))');
+            // Remplir la localisation pour chaque ville configurée en base
+            for (const row of villeRows) {
+              await page.waitForSelector('input#city', { visible: true });
+              await page.fill('input#city', row.params.nom_input);
+              await page.waitForTimeout(1000);
+              await page.waitForSelector('.ui-menu-item', { timeout: 5000 });
+              await page.click(`li:has(a:has-text("${row.params.label}"))`);
+            }
 
             // Définir le prix maximum à 400 000 €
             await page.fill('input#budget', '400000');

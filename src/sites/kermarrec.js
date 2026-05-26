@@ -1,12 +1,7 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.kermarrec-habitation.fr";
-const LIST_URL =
-  `${BASE_URL}/achat/?post_type=achat&false-select=on&1d04ea34=chateaugiron` +
-  `&ville%5B%5D=vitre-35500&ville%5B%5D=chateaugiron-35410` +
-  `&typebien%5B%5D=immeuble&typebien%5B%5D=maison&budget_max=400000` +
-  `&reference=&rayon=0&avec_carte=false&tri=pertinence`;
 
 const HEADERS = {
   "User-Agent":
@@ -88,6 +83,18 @@ async function scrapeDetailPage(url) {
 }
 
 export const kermarrecScraper = async () => {
+  const villeRows = await getVilleParams("kermarrec");
+  if (!villeRows.length) {
+    console.warn("⚠️ Kermarrec - Aucune ville configurée en base");
+    return;
+  }
+  const primary    = villeRows.find(r => r.params.is_primary) || villeRows[villeRows.length - 1];
+  const villeParams = villeRows.map(r => `ville%5B%5D=${r.params.slug}`).join("&");
+  const LIST_URL =
+    `${BASE_URL}/achat/?post_type=achat&false-select=on&1d04ea34=${primary.params.nom}` +
+    `&${villeParams}&typebien%5B%5D=immeuble&typebien%5B%5D=maison&budget_max=400000` +
+    `&reference=&rayon=0&avec_carte=false&tri=pertinence`;
+
   const liensActuels = [];
   let currentUrl = LIST_URL;
 

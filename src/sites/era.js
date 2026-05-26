@@ -1,10 +1,7 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.eraimmobilier.com";
-const LIST_URL =
-  `${BASE_URL}/acheter/Chateaugiron-c15629,Vitre-c27606` +
-  `?page=1&prix_to=400000&type_bien=maison,immeuble&display=list`;
 
 const HEADERS = {
   "User-Agent":
@@ -79,6 +76,14 @@ async function scrapeDetailPage(url) {
 }
 
 export const eraScraper = async () => {
+  const villeRows = await getVilleParams("era");
+  if (!villeRows.length) {
+    console.warn("⚠️ ERA - Aucune ville configurée en base");
+    return;
+  }
+  const cities  = villeRows.map(r => r.params.era_id).join(",");
+  const LIST_URL = `${BASE_URL}/acheter/${cities}?page=1&prix_to=400000&type_bien=maison,immeuble&display=list`;
+
   const liensActuels = [];
   let currentUrl = LIST_URL;
 

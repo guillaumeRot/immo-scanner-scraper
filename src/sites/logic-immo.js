@@ -1,18 +1,25 @@
 import { PlaywrightCrawler, RequestQueue } from "crawlee";
 import { chromium } from "playwright";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 export const logicImmoScraper = async () => {
+  const villeRows = await getVilleParams("logic-immo");
+  if (!villeRows.length) {
+    console.warn("⚠️ Logic-immo - Aucune ville configurée en base");
+    return;
+  }
+  const locations = villeRows.map(r => r.params.location_code).join(",");
+
   const requestQueue = await RequestQueue.open(`logic-immo-${Date.now()}`);
-  
-  // On démarre par les deux pages de recherche
+
+  // On démarre par les deux pages de recherche (maison + immeuble)
   await requestQueue.addRequest({
-    url: "https://www.logic-immo.com/classified-search?distributionTypes=Buy&estateTypes=House&locations=AD08FR14276,AD08FR13990&priceMax=400000",
+    url: `https://www.logic-immo.com/classified-search?distributionTypes=Buy&estateTypes=House&locations=${locations}&priceMax=400000`,
     userData: { label: "LIST_PAGE" },
   });
 
   await requestQueue.addRequest({
-    url: "https://www.logic-immo.com/classified-search?distributionTypes=Buy&estateTypes=Building&locations=AD08FR14276,AD08FR13990&priceMax=400000",
+    url: `https://www.logic-immo.com/classified-search?distributionTypes=Buy&estateTypes=Building&locations=${locations}&priceMax=400000`,
     userData: { label: "LIST_PAGE" },
   });
 

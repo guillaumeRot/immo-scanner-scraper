@@ -1,8 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
-
-const LIST_URL =
-  "https://bretilimmo.com/a-vendre?sort=&type_bien%5B%5D=immeuble&type_bien%5B%5D=maison-villa&localisation%5B%5D=vitre&pieces=&chambres=&minBudget=&maxBudget=400000&minSurface=&maxSurface=&minTerrain=&maxTerrain=&reference=&submit=";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -83,6 +80,16 @@ async function scrapeDetailPage(url) {
 }
 
 export const bretilimmoScraper = async () => {
+  const villeRows = await getVilleParams("bretilimmo");
+  if (!villeRows.length) {
+    console.warn("⚠️ Bretil'Immo - Aucune ville configurée en base");
+    return;
+  }
+  const locParams = villeRows.map(r => `localisation%5B%5D=${r.params.slug}`).join("&");
+  const LIST_URL =
+    `https://bretilimmo.com/a-vendre?sort=&type_bien%5B%5D=immeuble&type_bien%5B%5D=maison-villa` +
+    `&${locParams}&pieces=&chambres=&minBudget=&maxBudget=400000&minSurface=&maxSurface=&minTerrain=&maxTerrain=&reference=&submit=`;
+
   const liensActuels = [];
   let currentUrl = LIST_URL;
 

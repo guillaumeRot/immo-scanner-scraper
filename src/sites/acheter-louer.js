@@ -1,11 +1,7 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.acheter-louer.fr";
-const LIST_URL =
-  "https://www.acheter-louer.fr/recherche?categorie=achat&loc=vitre,chateaugiron" +
-  "&prix-min=0&prix-max=400000&type=maison,immeuble" +
-  "&surface-global-min=0&surface-globale-max=100000&cityZip=35500,35410&sort=Date";
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -91,6 +87,18 @@ async function scrapeDetailPage(url) {
 }
 
 export const acheterLouerScraper = async () => {
+  const villeRows = await getVilleParams("acheter-louer");
+  if (!villeRows.length) {
+    console.warn("⚠️ Acheter-louer - Aucune ville configurée en base");
+    return;
+  }
+  const locs     = villeRows.map(r => r.params.loc).join(",");
+  const cityZips = villeRows.map(r => r.params.cityZip).join(",");
+  const LIST_URL =
+    `${BASE_URL}/recherche?categorie=achat&loc=${locs}` +
+    `&prix-min=0&prix-max=400000&type=maison,immeuble` +
+    `&surface-global-min=0&surface-globale-max=100000&cityZip=${cityZips}&sort=Date`;
+
   const liensActuels = [];
 
   const links = await scrapeListPage(LIST_URL);
