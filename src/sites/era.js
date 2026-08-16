@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.eraimmobilier.com";
 
@@ -74,6 +74,62 @@ async function scrapeDetailPage(url) {
 
   return { type: title.replace("Vente", "").trim(), prix, ville, surface: 0, pieces: 0, chambres: 0, description, photos, dpe, ges };
 }
+
+// Même structure ng-state pour la vente et la location : val.prix contient le loyer
+// mensuel quand la page est sous /louer/, pas besoin d'un scrapeDetailPage séparé.
+export const eraLocationScraper = async () => {
+  const villeRows = await getVilleParams("era");
+  if (!villeRows.length) {
+    console.warn("⚠️ ERA (location) - Aucune ville configurée en base");
+    return;
+  }
+  const cities = villeRows.map(r => r.params.era_id).join(",");
+  const LIST_URL = `${BASE_URL}/louer/${cities}?page=1&type_bien=appartement&display=list`;
+
+  const liensActuels = [];
+  let currentUrl = LIST_URL;
+
+  while (currentUrl) {
+    console.log(`🔎 ERA (location) - Page de liste : ${currentUrl}`);
+    const { links, nextUrl } = await scrapeListPage(currentUrl);
+    console.log(`📌 ERA (location) - ${links.length} annonces trouvées.`);
+
+    for (const url of links) {
+      try {
+        console.log(`📄 ERA (location) - Page détail : ${url}`);
+        const data = await scrapeDetailPage(url);
+
+        if (data.ville && data.prix) {
+          await insertAnnonceLocation({
+            type: data.type,
+            loyer: data.prix,
+            ville: data.ville,
+            pieces: data.pieces,
+            surface: data.surface,
+            description: data.description,
+            photos: data.photos,
+            dpe: data.dpe,
+            ges: data.ges,
+            agence: "ERA",
+            lien: url,
+          });
+          liensActuels.push(url);
+        } else {
+          console.warn(`⚠️ ERA (location) - Données incomplètes pour ${url}`);
+          await insertErreur("ERA (location)", url, "Données incomplètes (ville ou loyer manquant)");
+        }
+      } catch (err) {
+        console.error(`❌ ERA (location) - Erreur sur ${url}:`, err.message);
+        await insertErreur("ERA (location)", url, String(err));
+      }
+    }
+
+    currentUrl = nextUrl;
+  }
+
+  await deleteMissingAnnoncesLocation("ERA", Array.from(new Set(liensActuels)));
+  console.log("✅ ERA (location) - Scraping terminé !");
+};
 
 export const eraScraper = async () => {
   const villeRows = await getVilleParams("era");

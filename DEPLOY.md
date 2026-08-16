@@ -74,13 +74,26 @@ utiliser **4h/10h/16h UTC** en été (CEST, actuellement) ou **5h/11h/17h UTC** 
 (CET) — il faudra ajuster manuellement les tâches au changement d'heure (fin
 mars / fin octobre), cron-job.org ne gère pas le fuseau France automatiquement.
 
-Liste des 15 scrapers actifs (valeur du paramètre `scraper`) :
+Liste des 15 scrapers de vente actifs (valeur du paramètre `scraper`) :
 
 ```
 kermarrec, era, blot, carnot, penn, diard, century, bretilimmo,
 boyer, notaires-bretons, immobilier-notaires, acheter-louer,
 bien-ici, immonot, fnaim
 ```
+
+Liste des 9 scrapers de location (appartements, table `AnnonceLocation` séparée) :
+
+```
+kermarrec-location, era-location, carnot-location, diard-location,
+bretilimmo-location, boyer-location, notaires-bretons-location,
+acheter-louer-location, bien-ici-location
+```
+
+Century 21, Immobilier Notaires, Immonot, FNAIM, Penn et Blot n'ont pas de scraper
+location (pas de recherche exploitable trouvée sur le site, ou — pour Blot — un
+mécanisme de filtrage des biens déjà loués qui ne fonctionne pas côté location ;
+détails dans les commentaires de `src/app.js`).
 
 Exemple d'URL complète pour Kermarrec :
 ```

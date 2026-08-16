@@ -1,4 +1,4 @@
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
 
 const HEADERS = {
   "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
@@ -37,6 +37,21 @@ function parseAd(ad) {
   const dpe = ad.energyClassification || null;
   const ges = ad.greenhouseGazClassification || null;
   return { type, prix, ville, surface, pieces, chambres, description, photos, dpe, ges };
+}
+
+async function fetchLocationPage(from, zoneIds, size = 100) {
+  const filters = {
+    size, from,
+    filterType: "rent",
+    propertyType: ["flat"],
+    zoneIdsByTypes: { zoneIds },
+    sortBy: "publicationDate",
+    sortOrder: "desc",
+  };
+  const url = `https://www.bienici.com/realEstateAds.json?filters=${encodeURIComponent(JSON.stringify(filters))}`;
+  const res = await fetch(url, { headers: HEADERS });
+  if (!res.ok) throw new Error(`HTTP ${res.status} on realEstateAds.json`);
+  return res.json();
 }
 
 // BienIci agrège les annonces de nombreuses agences : la même maison peut apparaître
@@ -115,4 +130,71 @@ export const bienIciScraper = async () => {
 
   await deleteMissingAnnonces("Bien-ici", [...new Set(liensActuels)]);
   console.log("✅ Bien-ici - Scraping terminé !");
+};
+
+export const bienIciLocationScraper = async () => {
+  const villeRows = await getVilleParams("bienici");
+  if (!villeRows.length) {
+    console.warn("⚠️ Bien-ici (location) - Aucune ville configurée en base");
+    return;
+  }
+
+  const liensActuels = [];
+  const size = 100;
+
+  for (const row of villeRows) {
+    const zoneIds = [row.params.zone_id];
+    let from = 0;
+    let total = Infinity;
+    let page = 0;
+
+    while (from < total && page < MAX_PAGES_PAR_VILLE) {
+      let json;
+      try {
+        json = await fetchLocationPage(from, zoneIds, size);
+      } catch (err) {
+        console.warn(`⚠️ Bien-ici (location) - Pagination interrompue à from=${from}: ${err.message}`);
+        break;
+      }
+      total = json.total;
+      const ads = json.realEstateAds || [];
+      console.log(`📌 Bien-ici (location) - ${row.nom} : ${from + ads.length}/${total} annonces récupérées`);
+
+      for (const ad of ads) {
+        const lien = `https://www.bienici.com/annonce/${ad.id}`;
+        try {
+          const data = parseAd(ad);
+          if (data.ville && data.prix) {
+            await insertAnnonceLocation({
+              type: "Appartement",
+              loyer: data.prix,
+              ville: data.ville,
+              pieces: data.pieces,
+              surface: data.surface,
+              description: data.description,
+              photos: data.photos,
+              dpe: data.dpe,
+              ges: data.ges,
+              agence: "Bien-ici",
+              lien,
+            });
+            liensActuels.push(lien);
+          } else {
+            console.warn(`⚠️ Bien-ici (location) - Données incomplètes pour ${lien}`);
+            await insertErreur("Bien-ici (location)", lien, "Données incomplètes (ville ou loyer manquant)");
+          }
+        } catch (err) {
+          console.error(`❌ Bien-ici (location) - Erreur sur ${lien}: ${err.message}`);
+          await insertErreur("Bien-ici (location)", lien, String(err));
+        }
+      }
+
+      from += size;
+      page++;
+      if (ads.length < size) break;
+    }
+  }
+
+  await deleteMissingAnnoncesLocation("Bien-ici", [...new Set(liensActuels)]);
+  console.log("✅ Bien-ici (location) - Scraping terminé !");
 };

@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.acheter-louer.fr";
 
@@ -33,6 +33,19 @@ async function scrapeListPage(url) {
   const $ = cheerio.load(html);
   const links = new Set();
   $(".CardSearchResult a[href*='/annonces-immobilier/achat/']").each((_, el) => {
+    const href = $(el).attr("href");
+    if (href && !href.includes("?q=")) {
+      links.add(href.startsWith("http") ? href : `${BASE_URL}${href}`);
+    }
+  });
+  return [...links];
+}
+
+async function scrapeLocationListPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+  const links = new Set();
+  $(".CardSearchResult a[href*='/annonces-immobilier/location/']").each((_, el) => {
     const href = $(el).attr("href");
     if (href && !href.includes("?q=")) {
       links.add(href.startsWith("http") ? href : `${BASE_URL}${href}`);
@@ -85,6 +98,56 @@ async function scrapeDetailPage(url) {
 
   return { type, prix, ville, surface, pieces: 0, chambres, description, photos, dpe: null, ges: null };
 }
+
+export const acheterLouerLocationScraper = async () => {
+  const villeRows = await getVilleParams("acheter-louer");
+  if (!villeRows.length) {
+    console.warn("⚠️ Acheter-louer (location) - Aucune ville configurée en base");
+    return;
+  }
+
+  const liensActuels = [];
+
+  for (const row of villeRows) {
+    const LIST_URL = `${BASE_URL}/annonces/immobilier/location-appartement-${row.params.loc}`;
+    console.log(`🔎 Acheter-louer (location) - Page de liste : ${LIST_URL}`);
+    const links = await scrapeLocationListPage(LIST_URL);
+    console.log(`📌 Acheter-louer (location) - ${links.length} annonces trouvées.`);
+
+    for (const url of links) {
+      try {
+        console.log(`📄 Acheter-louer (location) - Page détail : ${url}`);
+        const data = await scrapeDetailPage(url);
+        if (data.ville && data.prix) {
+          await insertAnnonceLocation({
+            type: "Appartement",
+            loyer: data.prix,
+            ville: data.ville,
+            pieces: data.pieces,
+            surface: data.surface,
+            description: data.description,
+            photos: data.photos,
+            dpe: data.dpe,
+            ges: data.ges,
+            agence: "Acheter-louer",
+            lien: url,
+          });
+          liensActuels.push(url);
+        } else {
+          console.warn(`⚠️ Acheter-louer (location) - Données incomplètes pour ${url}`);
+          await insertErreur("Acheter-louer (location)", url, "Données incomplètes (ville ou loyer manquant)");
+        }
+      } catch (err) {
+        console.error(`❌ Acheter-louer (location) - Erreur sur ${url}: ${err.message}`);
+        await insertErreur("Acheter-louer (location)", url, String(err));
+      }
+      await new Promise(r => setTimeout(r, 500));
+    }
+  }
+
+  await deleteMissingAnnoncesLocation("Acheter-louer", [...new Set(liensActuels)]);
+  console.log("✅ Acheter-louer (location) - Scraping terminé !");
+};
 
 export const acheterLouerScraper = async () => {
   const villeRows = await getVilleParams("acheter-louer");

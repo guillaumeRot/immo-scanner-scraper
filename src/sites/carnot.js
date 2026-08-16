@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -74,6 +74,63 @@ async function scrapeDetailPage(url) {
     ges: gesMatch?.[1] ?? null,
   };
 }
+
+// Même template pour vente et location (prix affiché "450€ par mois" en location, le
+// parsing numérique générique de scrapeDetailPage reste valable).
+export const carnotLocationScraper = async () => {
+  const villeRows = await getVilleParams("carnot");
+  if (!villeRows.length) {
+    console.warn("⚠️ Carnot (location) - Aucune ville configurée en base");
+    return;
+  }
+
+  const liensActuels = [];
+
+  for (const row of villeRows) {
+    let currentUrl = `https://www.carnotimmo.com/recherche-de-bien/?status=location&type%5B%5D=appartement&location=${row.params.slug}`;
+
+    while (currentUrl) {
+      console.log(`🔎 Carnot (location) - Page de liste : ${currentUrl}`);
+      const { links, nextUrl } = await scrapeListPage(currentUrl);
+      console.log(`📌 Carnot (location) - ${links.length} annonces trouvées.`);
+
+      for (const url of links) {
+        try {
+          console.log(`📄 Carnot (location) - Page détail : ${url}`);
+          const data = await scrapeDetailPage(url);
+
+          if (data.ville && data.prix) {
+            await insertAnnonceLocation({
+              type: "Appartement",
+              loyer: data.prix,
+              ville: data.ville,
+              pieces: data.pieces,
+              surface: data.surface,
+              description: data.description,
+              photos: data.photos,
+              dpe: data.dpe,
+              ges: data.ges,
+              agence: "Carnot",
+              lien: url,
+            });
+            liensActuels.push(url);
+          } else {
+            console.warn(`⚠️ Carnot (location) - Données incomplètes pour ${url}`);
+            await insertErreur("Carnot (location)", url, "Données incomplètes (ville ou loyer manquant)");
+          }
+        } catch (err) {
+          console.error(`❌ Carnot (location) - Erreur sur ${url}:`, err.message);
+          await insertErreur("Carnot (location)", url, String(err));
+        }
+      }
+
+      currentUrl = nextUrl;
+    }
+  }
+
+  await deleteMissingAnnoncesLocation("Carnot", Array.from(new Set(liensActuels)));
+  console.log("✅ Carnot (location) - Scraping terminé !");
+};
 
 export const carnotScraper = async () => {
   const villeRows = await getVilleParams("carnot");

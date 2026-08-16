@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.diard-immobilier.fr";
 const BASE_LIST_URL =
@@ -7,6 +7,13 @@ const BASE_LIST_URL =
   `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Vente` +
   `&C_27_search=EGAL&C_27_type=UNIQUE&C_27=2` +
   `&C_30_MAX=400000&C_30_search=COMPRIS&C_30_type=NUMBER` +
+  `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
+
+// Location : C_27=1 (Appartement, cf. options du formulaire), pas de plafond de budget
+const BASE_LIST_URL_LOCATION =
+  `${BASE_URL}/catalog/advanced_search_result.php?action=update_search` +
+  `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Location` +
+  `&C_27_search=EGAL&C_27_type=UNIQUE&C_27=1` +
   `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
 
 const HEADERS = {
@@ -75,6 +82,97 @@ async function scrapeDetailPage(url) {
 
   return { prix, ville, surface, pieces, chambres, dpe, ges, description, type, photos };
 }
+
+async function scrapeLocationDetailPage(url) {
+  const html = await fetchHtml(url);
+  const $ = cheerio.load(html);
+
+  function getCritere(label) {
+    let result = null;
+    $(".product-criteres .list-group-item").each((_, el) => {
+      const cols = $(el).find(".col-sm-6");
+      if (cols.first().text().trim() === label) {
+        result = cols.last().find("b").text().trim() || cols.last().text().trim();
+        return false;
+      }
+    });
+    return result;
+  }
+
+  // Widget de conformité loi ALUR (composant partagé par ce CMS, cf. Boyer) : .hono_inclus_price
+  // reste présent mais affiche une autre valeur (estimation), pas le loyer réel
+  const loyer = parseInt($(".alur_loyer_price").first().text().replace(/[^0-9]/g, "")) || 0;
+  const ville = $(".ville-title").first().text().trim();
+  const surface = parseInt((getCritere("Surface") || "").match(/\d+/)?.[0] || "0");
+  const pieces = parseInt(getCritere("Nombre pièces")) || 0;
+  const dpe = getCritere("Consommation énergie primaire") || null;
+  const ges = getCritere("Gaz Effet de Serre") || null;
+  const description = $(".products-description").first().text().trim();
+  const type = "Appartement";
+
+  const photos = [];
+  $(".container-slider-product img[src*='pr_p']").each((_, el) => {
+    const src = ($(el).attr("src") || "").replace(/^\.\.\//, `${BASE_URL}/`);
+    if (src && !photos.includes(src)) photos.push(src);
+  });
+
+  return { loyer, ville, surface, pieces, dpe, ges, description, type, photos };
+}
+
+export const diardLocationScraper = async () => {
+  const villeRows = await getVilleParams("diard");
+  if (!villeRows.length) {
+    console.warn("⚠️ Diard (location) - Aucune ville configurée en base");
+    return;
+  }
+
+  const liensActuels = [];
+
+  for (const row of villeRows) {
+    let currentUrl = BASE_LIST_URL_LOCATION + encodeURIComponent(row.params.C_65);
+
+    while (currentUrl) {
+      console.log(`🔎 Diard (location) - Page de liste : ${currentUrl}`);
+      const { links, nextUrl } = await scrapeListPage(currentUrl);
+      console.log(`📌 Diard (location) - ${links.length} annonces trouvées.`);
+
+      for (const url of links) {
+        try {
+          console.log(`📄 Diard (location) - Page détail : ${url}`);
+          const data = await scrapeLocationDetailPage(url);
+
+          if (data.ville && data.loyer) {
+            await insertAnnonceLocation({
+              type: data.type,
+              loyer: data.loyer,
+              ville: data.ville,
+              pieces: data.pieces,
+              surface: data.surface,
+              description: data.description,
+              photos: data.photos,
+              dpe: data.dpe,
+              ges: data.ges,
+              agence: "Diard",
+              lien: url,
+            });
+            liensActuels.push(url);
+          } else {
+            console.warn(`⚠️ Diard (location) - Données incomplètes pour ${url}`);
+            await insertErreur("Diard (location)", url, "Données incomplètes (ville ou loyer manquant)");
+          }
+        } catch (err) {
+          console.error(`❌ Diard (location) - Erreur sur ${url}:`, err.message);
+          await insertErreur("Diard (location)", url, String(err));
+        }
+      }
+
+      currentUrl = nextUrl;
+    }
+  }
+
+  await deleteMissingAnnoncesLocation("Diard", Array.from(new Set(liensActuels)));
+  console.log("✅ Diard (location) - Scraping terminé !");
+};
 
 export const diardScraper = async () => {
   const villeRows = await getVilleParams("diard");

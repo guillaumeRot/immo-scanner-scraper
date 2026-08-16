@@ -81,6 +81,32 @@ async function ensureTablesExists() {
   await pool.query(createErrorTableQuery);
   console.log("✅ Table 'Erreur' vérifiée/créée");
 
+  const createLocationTableQuery = `
+    CREATE TABLE IF NOT EXISTS "AnnonceLocation" (
+      id SERIAL PRIMARY KEY,
+      type VARCHAR(255),
+      loyer VARCHAR(100),
+      charges VARCHAR(100),
+      ville VARCHAR(100),
+      pieces VARCHAR(50),
+      surface VARCHAR(50),
+      lien VARCHAR UNIQUE NOT NULL,
+      description TEXT,
+      photos JSON,
+      agence VARCHAR(100) NOT NULL,
+      dpe VARCHAR(1),
+      ges VARCHAR(1),
+      created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+      date_scraped TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+
+    CREATE INDEX IF NOT EXISTS idx_annonce_location_lien ON "AnnonceLocation"(lien);
+    CREATE INDEX IF NOT EXISTS idx_annonce_location_agence ON "AnnonceLocation"(agence);
+  `;
+
+  await pool.query(createLocationTableQuery);
+  console.log("✅ Table 'AnnonceLocation' vérifiée/créée");
+
   const createScanTableQuery = `
     CREATE TABLE IF NOT EXISTS "Scan" (
       id SERIAL PRIMARY KEY,
@@ -490,6 +516,82 @@ export async function insertAnnonce(annonce) {
   }
 }
 
+export async function insertAnnonceLocation(annonce) {
+  if (!pool) throw new Error("Pool non initialisé");
+  if (!annonce.lien) {
+    console.error("Annonce location sans lien:", annonce);
+    return;
+  }
+
+  if (annonce.ville) {
+    annonce.ville = formaterVille(annonce.ville);
+  }
+
+  const villesSupportees = Object.values(VILLES).map(v => v.nom);
+  if (annonce.ville && !villesSupportees.includes(annonce.ville)) {
+    console.log(`Annonce location ignorée - ville non supportée: ${annonce.ville}`);
+    return;
+  }
+
+  if (annonce.dpe && !/^[A-G]$/.test(annonce.dpe)) annonce.dpe = null;
+  if (annonce.ges && !/^[A-G]$/.test(annonce.ges)) annonce.ges = null;
+
+  try {
+    const upsertQuery = `
+      INSERT INTO "AnnonceLocation" (type, loyer, charges, ville, pieces, surface, lien, agence, description, photos, dpe, ges, created_at, date_scraped)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      ON CONFLICT (lien)
+      DO UPDATE SET
+        type = EXCLUDED.type,
+        loyer = EXCLUDED.loyer,
+        charges = EXCLUDED.charges,
+        ville = EXCLUDED.ville,
+        pieces = EXCLUDED.pieces,
+        surface = EXCLUDED.surface,
+        agence = EXCLUDED.agence,
+        description = EXCLUDED.description,
+        photos = EXCLUDED.photos,
+        dpe = EXCLUDED.dpe,
+        ges = EXCLUDED.ges,
+        date_scraped = NOW()
+    `;
+
+    const values = [
+      annonce.type || "Appartement",
+      annonce.loyer || null,
+      annonce.charges || null,
+      annonce.ville || null,
+      annonce.pieces || null,
+      annonce.surface || null,
+      annonce.lien,
+      annonce.agence,
+      annonce.description || null,
+      annonce.photos ? JSON.stringify(annonce.photos) : null,
+      annonce.dpe || null,
+      annonce.ges || null,
+    ];
+
+    await pool.query(upsertQuery, values);
+  } catch (err) {
+    console.error("Erreur insertion annonce location (pg):", err);
+  }
+}
+
+export async function deleteMissingAnnoncesLocation(agence, liensActuels) {
+  if (liensActuels.length === 0 || !pool) return;
+
+  try {
+    const deleteQuery = `
+      DELETE FROM "AnnonceLocation"
+      WHERE agence = $1 AND lien NOT IN (${liensActuels.map((_, i) => `$${i + 2}`).join(", ")})
+    `;
+    const values = [agence, ...liensActuels];
+    await pool.query(deleteQuery, values);
+  } catch (err) {
+    console.error("Erreur suppression annonces location (pg):", err);
+  }
+}
+
 export async function insertErreur(scraper, url, message) {
   if (!pool) throw new Error("Pool non initialisé");
 
@@ -535,10 +637,16 @@ export async function updateScanTable(scraper, startTime) {
     const endTime = Date.now();
     const duration = endTime - startTime;
 
-    // Compter le nombre d'annonces et d'erreurs pour ce scraper
+    // Compter le nombre d'annonces et d'erreurs pour ce scraper (vente + location).
+    // Les scrapers location partagent le même nom d'agence que leur pendant vente
+    // (ex. "Kermarrec (location)" écrit dans AnnonceLocation avec agence = "Kermarrec").
+    const agenceBase = scraper.replace(/\s*\(location\)$/, "");
     const annoncesResult = await pool.query(
-      'SELECT COUNT(*) as count FROM "Annonce" WHERE agence = $1 AND date_scraped >= $2',
-      [scraper, new Date(startTime).toISOString()]
+      `SELECT
+         (SELECT COUNT(*) FROM "Annonce" WHERE agence = $1 AND date_scraped >= $2) +
+         (SELECT COUNT(*) FROM "AnnonceLocation" WHERE agence = $1 AND date_scraped >= $2)
+         AS count`,
+      [agenceBase, new Date(startTime).toISOString()]
     );
     const erreursResult = await pool.query(
       'SELECT COUNT(*) as count FROM "Erreur" WHERE scraper = $1 AND date_erreur >= $2',

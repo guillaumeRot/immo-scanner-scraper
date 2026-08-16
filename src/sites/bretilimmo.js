@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -16,7 +16,9 @@ async function fetchHtml(url) {
   return res.text();
 }
 
-async function scrapeListPage(url) {
+// Le paramètre type_bien n'est pas respecté côté serveur (les résultats mélangent tous les
+// types) : le filtre par type/ville/budget se fait donc côté client, comme pour la vente.
+async function scrapeListPage(url, validTypes = ["maison", "immeuble"], maxBudget = 400000) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
@@ -27,14 +29,17 @@ async function scrapeListPage(url) {
     if (!href) return;
 
     const typeSlug = href.match(/\/propriete\/([^-]+)/)?.[1] || "";
-    const cityMatch = text.match(/[—–]([A-ZÉÀÈÙÂÊÎÔÛÄËÏÖÜ\s]+?)(\d)/);
+    // Casse observée variable ("VITRE" ou "Vitre" selon les biens) : /i pour ne pas rater
+    // les noms de ville en casse mixte (bug préexistant qui faisait tout rejeter en silence)
+    const cityMatch = text.match(/[—–]([A-ZÉÀÈÙÂÊÎÔÛÄËÏÖÜ\s]+?)(\d)/i);
     const city = cityMatch?.[1]?.trim() || "";
-    const priceMatch = text.match(/([\d\s]+)\s*€\s*$/);
+    // "245 000 €" en vente, "600 €/mois" en location
+    const priceMatch = text.match(/([\d\s]+)\s*€(?:\/mois)?\s*$/);
     const prix = parseInt((priceMatch?.[1] || "0").replace(/\s/g, "")) || 0;
 
-    const isValidType = ["maison", "immeuble"].includes(typeSlug);
+    const isValidType = validTypes.includes(typeSlug);
     const isVitre = normalize(city).includes("vitre");
-    const isInBudget = prix <= 400000 && prix > 0;
+    const isInBudget = prix <= maxBudget && prix > 0;
 
     if (isValidType && isVitre && isInBudget) {
       links.add(`https://bretilimmo.com${href}`);
@@ -78,6 +83,61 @@ async function scrapeDetailPage(url) {
 
   return { type, prix, ville, surface, pieces, chambres: 0, description, photos };
 }
+
+export const bretilimmoLocationScraper = async () => {
+  const villeRows = await getVilleParams("bretilimmo");
+  if (!villeRows.length) {
+    console.warn("⚠️ Bretil'Immo (location) - Aucune ville configurée en base");
+    return;
+  }
+  const locParams = villeRows.map(r => `localisation%5B%5D=${r.params.slug}`).join("&");
+  const LIST_URL =
+    `https://bretilimmo.com/location?sort=&type_bien%5B%5D=appartement` +
+    `&${locParams}&pieces=&chambres=&minBudget=&maxBudget=&minSurface=&maxSurface=&minTerrain=&maxTerrain=&reference=&submit=`;
+
+  const liensActuels = [];
+  let currentUrl = LIST_URL;
+
+  while (currentUrl) {
+    console.log(`🔎 Bretil'Immo (location) - Page de liste : ${currentUrl}`);
+    // Pas de plafond de budget pertinent pour un loyer ; on ne garde que le type "appartement"
+    const { links, nextUrl } = await scrapeListPage(currentUrl, ["appartement"], Infinity);
+    console.log(`📌 Bretil'Immo (location) - ${links.length} annonces trouvées.`);
+
+    for (const url of links) {
+      try {
+        console.log(`📄 Bretil'Immo (location) - Page détail : ${url}`);
+        const data = await scrapeDetailPage(url);
+
+        if (data.ville && data.prix) {
+          await insertAnnonceLocation({
+            type: "Appartement",
+            loyer: data.prix,
+            ville: data.ville,
+            pieces: data.pieces,
+            surface: data.surface,
+            description: data.description,
+            photos: data.photos,
+            agence: "Bretil'Immo",
+            lien: url,
+          });
+          liensActuels.push(url);
+        } else {
+          console.warn(`⚠️ Bretil'Immo (location) - Données incomplètes pour ${url}`);
+          await insertErreur("Bretil'Immo (location)", url, "Données incomplètes (ville ou loyer manquant)");
+        }
+      } catch (err) {
+        console.error(`❌ Bretil'Immo (location) - Erreur sur ${url}:`, err.message);
+        await insertErreur("Bretil'Immo (location)", url, String(err));
+      }
+    }
+
+    currentUrl = nextUrl;
+  }
+
+  await deleteMissingAnnoncesLocation("Bretil'Immo", Array.from(new Set(liensActuels)));
+  console.log("✅ Bretil'Immo (location) - Scraping terminé !");
+};
 
 export const bretilimmoScraper = async () => {
   const villeRows = await getVilleParams("bretilimmo");
