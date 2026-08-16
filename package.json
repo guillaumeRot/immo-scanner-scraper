@@ -12,14 +12,10 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
-    "base64-js": "^1.5.1",
-    "body-parser": "^1.20.3",
     "cheerio": "^1.2.0",
-    "crawlee": "^3.15.1",
     "dotenv": "^17.2.2",
     "express": "^4.21.2",
-    "pg": "^8.11.0",
-    "playwright": "^1.50.1"
+    "pg": "^8.11.0"
   },
   "devDependencies": {
     "@types/pg": "^8.15.5"

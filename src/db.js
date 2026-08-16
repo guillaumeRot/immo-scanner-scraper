@@ -2,12 +2,13 @@ import pg from 'pg';
 
 const { Pool } = pg;
 
-// Pool et client initialisés lors de initDb()
+// Pool initialisé lors de initDb() ; réutilisé tel quel entre invocations "chaudes"
+// d'une fonction serverless (pas de connexion unique retenue, chaque requête passe
+// par pool.query() qui emprunte/rend une connexion au pooler Neon).
 let pool = null;
-let client = null;
 
 export async function initDb() {
-  if (pool && client) return; // déjà connecté
+  if (pool) return; // déjà connecté
 
   try {
     const url = process.env.DATABASE_URL;
@@ -18,20 +19,21 @@ export async function initDb() {
     pool = new Pool({
       connectionString: url,
       ssl: { rejectUnauthorized: false },
+      max: 5,
     });
 
-    client = await pool.connect();
     console.log("✅ Connexion à la base de données PostgreSQL établie");
 
     await ensureTablesExists();
   } catch (err) {
     console.error("❌ Erreur de connexion à la base de données:", err);
+    pool = null;
     throw err;
   }
 }
 
 async function ensureTablesExists() {
-  if (!client) throw new Error("Client non initialisé");
+  if (!pool) throw new Error("Pool non initialisé");
 
   const createTableQuery = `
     CREATE TABLE IF NOT EXISTS "Annonce" (
@@ -73,10 +75,10 @@ async function ensureTablesExists() {
     CREATE INDEX IF NOT EXISTS idx_erreur_date ON "Erreur"(date_erreur);
   `;
 
-  await client.query(createTableQuery);
+  await pool.query(createTableQuery);
   console.log("✅ Table 'Annonce' vérifiée/créée");
 
-  await client.query(createErrorTableQuery);
+  await pool.query(createErrorTableQuery);
   console.log("✅ Table 'Erreur' vérifiée/créée");
 
   const createScanTableQuery = `
@@ -95,7 +97,7 @@ async function ensureTablesExists() {
     CREATE INDEX IF NOT EXISTS idx_scan_date ON "Scan"(date_scan);
   `;
 
-  await client.query(createScanTableQuery);
+  await pool.query(createScanTableQuery);
   console.log("✅ Table 'Scan' vérifiée/créée");
 
   const createVillesTableQuery = `
@@ -115,22 +117,22 @@ async function ensureTablesExists() {
     );
   `;
 
-  await client.query(createVillesTableQuery);
+  await pool.query(createVillesTableQuery);
   console.log("✅ Tables 'Villes' et 'VilleScraperParams' vérifiées/créées");
 
   await seedVilles();
 }
 
 async function seedVilles() {
-  await client.query(`
+  await pool.query(`
     INSERT INTO "Villes" (nom, code_postal) VALUES
       ('Vitré', '35500'),
       ('Châteaugiron', '35410')
     ON CONFLICT (nom) DO NOTHING
   `);
 
-  const vitre        = (await client.query(`SELECT id FROM "Villes" WHERE nom = 'Vitré'`)).rows[0].id;
-  const chateaugiron = (await client.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaugiron'`)).rows[0].id;
+  const vitre        = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Vitré'`)).rows[0].id;
+  const chateaugiron = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaugiron'`)).rows[0].id;
 
   const entries = [
     [vitre,        "acheter-louer",       { loc: "vitre",             cityZip: "35500" }],
@@ -142,6 +144,8 @@ async function seedVilles() {
     [vitre,        "boyer",               { C_65: "35500+VITRE" }],
     [vitre,        "bretilimmo",          { slug: "vitre" }],
     [vitre,        "carnot",              { slug: "vitre-35500" }],
+    [vitre,        "diard",               { C_65: "35500 VITRE" }],
+    [chateaugiron, "diard",               { C_65: "35410 CHATEAUGIRON" }],
     [vitre,        "century",             { segment: "cpv-35500_vitre",    cible: true }],
     [chateaugiron, "century",             { segment: "v-chateaugiron",     cible: false }],
     [vitre,        "era",                 { era_id: "Vitre-c27606" }],
@@ -164,7 +168,7 @@ async function seedVilles() {
   ];
 
   for (const [ville_id, scraper, p] of entries) {
-    await client.query(
+    await pool.query(
       `INSERT INTO "VilleScraperParams" (ville_id, scraper, params)
        VALUES ($1, $2, $3)
        ON CONFLICT (ville_id, scraper) DO NOTHING`,
@@ -176,8 +180,8 @@ async function seedVilles() {
 }
 
 export async function getVilleParams(scraper) {
-  if (!client) throw new Error("Client non initialisé");
-  const result = await client.query(
+  if (!pool) throw new Error("Pool non initialisé");
+  const result = await pool.query(
     `SELECT v.nom, v.code_postal, vsp.params
      FROM "VilleScraperParams" vsp
      JOIN "Villes" v ON vsp.ville_id = v.id
@@ -383,7 +387,7 @@ function extractHouseRooms(description) {
 }
 
 export async function insertAnnonce(annonce) {
-  if (!client) throw new Error("Client non initialisé");
+  if (!pool) throw new Error("Pool non initialisé");
   if (!annonce.lien) {
     console.error("Annonce sans lien:", annonce);
     return;
@@ -398,6 +402,12 @@ export async function insertAnnonce(annonce) {
   if (annonce.type) {
     annonce.type = formaterType(annonce.type);
   }
+
+  // dpe/ges sont stockés en VARCHAR(1) (une lettre A-G) : toute valeur qui ne suit pas ce
+  // format (ex: "vierge", "NC", classes venant d'une API tierce) doit être ignorée plutôt
+  // que de faire échouer l'insertion avec "value too long for type character varying(1)"
+  if (annonce.dpe && !/^[A-G]$/.test(annonce.dpe)) annonce.dpe = null;
+  if (annonce.ges && !/^[A-G]$/.test(annonce.ges)) annonce.ges = null;
 
   // Vérifie si la ville est une des villes supportées
   const villesSupportees = Object.values(VILLES).map(v => v.nom);
@@ -474,14 +484,14 @@ export async function insertAnnonce(annonce) {
       annonce.ges || null
     ];
 
-    await client.query(upsertQuery, values);
+    await pool.query(upsertQuery, values);
   } catch (err) {
     console.error("Erreur insertion annonce (pg):", err);
   }
 }
 
 export async function insertErreur(scraper, url, message) {
-  if (!client) throw new Error("Client non initialisé");
+  if (!pool) throw new Error("Pool non initialisé");
 
   try {
     const insertQuery = `
@@ -490,7 +500,7 @@ export async function insertErreur(scraper, url, message) {
     `;
 
     const values = [scraper, url, message];
-    await client.query(insertQuery, values);
+    await pool.query(insertQuery, values);
 
     console.log(`⚠️ Erreur enregistrée pour ${scraper}: ${message}`);
   } catch (err) {
@@ -504,7 +514,7 @@ export async function insertErreur(scraper, url, message) {
  * @param {string[]} liensActuels
  */
 export async function deleteMissingAnnonces(agence, liensActuels) {
-  if (liensActuels.length === 0 || !client) return;
+  if (liensActuels.length === 0 || !pool) return;
 
   try {
     const deleteQuery = `
@@ -512,25 +522,25 @@ export async function deleteMissingAnnonces(agence, liensActuels) {
       WHERE agence = $1 AND lien NOT IN (${liensActuels.map((_, i) => `$${i + 2}`).join(", ")})
     `;
     const values = [agence, ...liensActuels];
-    await client.query(deleteQuery, values);
+    await pool.query(deleteQuery, values);
   } catch (err) {
     console.error("Erreur suppression annonces (pg):", err);
   }
 }
 
 export async function updateScanTable(scraper, startTime) {
-  if (!client) throw new Error("Client non initialisé");
+  if (!pool) throw new Error("Pool non initialisé");
 
   try {
     const endTime = Date.now();
     const duration = endTime - startTime;
 
     // Compter le nombre d'annonces et d'erreurs pour ce scraper
-    const annoncesResult = await client.query(
+    const annoncesResult = await pool.query(
       'SELECT COUNT(*) as count FROM "Annonce" WHERE agence = $1 AND date_scraped >= $2',
       [scraper, new Date(startTime).toISOString()]
     );
-    const erreursResult = await client.query(
+    const erreursResult = await pool.query(
       'SELECT COUNT(*) as count FROM "Erreur" WHERE scraper = $1 AND date_erreur >= $2',
       [scraper, new Date(startTime).toISOString()]
     );
@@ -551,7 +561,7 @@ export async function updateScanTable(scraper, startTime) {
         duree_ms = $4
     `;
 
-    await client.query(upsertQuery, [scraper, annoncesCount, erreursCount, duration]);
+    await pool.query(upsertQuery, [scraper, annoncesCount, erreursCount, duration]);
     console.log(`✅ Table 'Scan' mise à jour pour ${scraper}: ${annoncesCount} annonces, ${erreursCount} erreurs, ${duration}ms`);
 
   } catch (err) {
@@ -561,10 +571,6 @@ export async function updateScanTable(scraper, startTime) {
 }
 
 export async function closeDb() {
-  if (client) {
-    client.release();
-    client = null;
-  }
   if (pool) {
     await pool.end();
     pool = null;

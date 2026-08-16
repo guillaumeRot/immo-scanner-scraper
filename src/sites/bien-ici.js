@@ -39,57 +39,78 @@ function parseAd(ad) {
   return { type, prix, ville, surface, pieces, chambres, description, photos, dpe, ges };
 }
 
+// BienIci agrège les annonces de nombreuses agences : la même maison peut apparaître
+// plusieurs fois (une par portail/agent), ce qui gonfle vite le total par zone (constaté :
+// >1500 annonces pour une commune de moins de 20 000 habitants). Trier par date de
+// publication et plafonner à quelques pages par ville suffit à couvrir l'activité récente
+// sans dépasser la limite de durée d'une fonction serverless (chaque zone est interrogée
+// séparément pour que les deux villes soient couvertes équitablement).
+const MAX_PAGES_PAR_VILLE = 5;
+
 export const bienIciScraper = async () => {
   const villeRows = await getVilleParams("bienici");
   if (!villeRows.length) {
     console.warn("⚠️ Bien-ici - Aucune ville configurée en base");
     return;
   }
-  const zoneIds = villeRows.map(r => r.params.zone_id);
 
   const liensActuels = [];
   const size = 100;
-  let from = 0;
-  let total = Infinity;
 
-  while (from < total) {
-    const json = await fetchPage(from, zoneIds, size);
-    total = json.total;
-    const ads = json.realEstateAds || [];
-    console.log(`📌 Bien-ici - ${from + ads.length}/${total} annonces récupérées`);
+  for (const row of villeRows) {
+    const zoneIds = [row.params.zone_id];
+    let from = 0;
+    let total = Infinity;
+    let page = 0;
 
-    for (const ad of ads) {
-      const lien = `https://www.bienici.com/annonce/${ad.id}`;
+    while (from < total && page < MAX_PAGES_PAR_VILLE) {
+      let json;
       try {
-        const data = parseAd(ad);
-        if (data.ville && data.prix) {
-          await insertAnnonce({
-            type: data.type,
-            prix: data.prix,
-            ville: data.ville,
-            pieces: data.pieces,
-            chambres: data.chambres,
-            surface: data.surface,
-            description: data.description,
-            photos: data.photos,
-            dpe: data.dpe,
-            ges: data.ges,
-            agence: "Bien-ici",
-            lien,
-          });
-          liensActuels.push(lien);
-        } else {
-          console.warn(`⚠️ Bien-ici - Données incomplètes pour ${lien}`);
-          await insertErreur("Bien-ici", lien, "Données incomplètes (ville ou prix manquant)");
-        }
+        json = await fetchPage(from, zoneIds, size);
       } catch (err) {
-        console.error(`❌ Bien-ici - Erreur sur ${lien}: ${err.message}`);
-        await insertErreur("Bien-ici", lien, String(err));
+        // L'API refuse de paginer au-delà d'un certain offset ("Too many ads requested") :
+        // on s'arrête proprement avec ce qu'on a déjà récupéré plutôt que de planter le scraper.
+        console.warn(`⚠️ Bien-ici - Pagination interrompue à from=${from}: ${err.message}`);
+        break;
       }
-    }
+      total = json.total;
+      const ads = json.realEstateAds || [];
+      console.log(`📌 Bien-ici - ${row.nom} : ${from + ads.length}/${total} annonces récupérées`);
 
-    from += size;
-    if (ads.length < size) break;
+      for (const ad of ads) {
+        const lien = `https://www.bienici.com/annonce/${ad.id}`;
+        try {
+          const data = parseAd(ad);
+          if (data.ville && data.prix) {
+            await insertAnnonce({
+              type: data.type,
+              prix: data.prix,
+              ville: data.ville,
+              pieces: data.pieces,
+              chambres: data.chambres,
+              surface: data.surface,
+              description: data.description,
+              photos: data.photos,
+              dpe: data.dpe,
+              ges: data.ges,
+              agence: "Bien-ici",
+              lien,
+            });
+            liensActuels.push(lien);
+          } else {
+            console.warn(`⚠️ Bien-ici - Données incomplètes pour ${lien}`);
+            await insertErreur("Bien-ici", lien, "Données incomplètes (ville ou prix manquant)");
+          }
+        } catch (err) {
+          console.error(`❌ Bien-ici - Erreur sur ${lien}: ${err.message}`);
+          await insertErreur("Bien-ici", lien, String(err));
+        }
+      }
+
+      from += size;
+      page++;
+      if (ads.length < size) break;
+    }
   }
 
   await deleteMissingAnnonces("Bien-ici", [...new Set(liensActuels)]);

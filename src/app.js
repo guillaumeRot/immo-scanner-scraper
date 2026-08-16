@@ -1,6 +1,6 @@
 import 'dotenv/config';
 import express from 'express';
-import { closeDb, initDb, updateScanTable } from './db.js';
+import { initDb, updateScanTable } from './db.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper } from './sites/kermarrec.js';
 import { eraScraper } from './sites/era.js';
@@ -13,138 +13,105 @@ import { bretilimmoScraper } from './sites/bretilimmo.js';
 import { boyerScraper } from './sites/boyer.js';
 import { notairesBretonsScraper } from './sites/notaires-bretons.js';
 import { immobilierNotairesScraper } from './sites/immobilier-notaires.js';
-import { figaroImmobilierScraper } from './sites/immobilier-figaro.js';
 import { acheterLouerScraper } from './sites/acheter-louer.js';
 import { bienIciScraper } from './sites/bien-ici.js';
 import { fnaimScraper } from './sites/fnaim.js';
-import { ouestFranceScraper } from './sites/ouest-france.js';
+
+// Figaro Immobilier, Logic-immo et Ouest-France Immo sont désactivés : ils nécessitent
+// Playwright (protections anti-bot Cloudflare/DataDome/challenge maison), incompatible
+// avec un déploiement serverless Vercel. Leurs fichiers restent dans src/sites/ pour
+// référence mais ne sont plus importés ici.
+
 const app = express();
-
-// Évite les exécutions concurrentes
-let isScrapeRunning = false;
-
 app.use(express.json());
+
+// Liste des scrapers pilotables, tous fetch+cheerio (compatibles serverless)
+const SCRAPERS = {
+  "kermarrec": { fn: kermarrecScraper, displayName: "Kermarrec" },
+  "era": { fn: eraScraper, displayName: "ERA" },
+  "blot": { fn: blotScraper, displayName: "Blot" },
+  "carnot": { fn: carnotScraper, displayName: "Carnot" },
+  "penn": { fn: pennScraper, displayName: "Penn" },
+  "diard": { fn: diardScraper, displayName: "Diard" },
+  "century": { fn: centuryScraper, displayName: "Century 21" },
+  "bretilimmo": { fn: bretilimmoScraper, displayName: "Bretil'Immo" },
+  "boyer": { fn: boyerScraper, displayName: "Boyer Immobilier" },
+  "notaires-bretons": { fn: notairesBretonsScraper, displayName: "Notaires et Bretons" },
+  "immobilier-notaires": { fn: immobilierNotairesScraper, displayName: "Immobilier Notaires" },
+  "acheter-louer": { fn: acheterLouerScraper, displayName: "Acheter-louer" },
+  "bien-ici": { fn: bienIciScraper, displayName: "Bien-ici" },
+  "immonot": { fn: immonotScraper, displayName: "Immonot" },
+  "fnaim": { fn: fnaimScraper, displayName: "FNAIM" },
+};
+
+// Protège l'endpoint de scraping : appel réservé au workflow planifié (GitHub Actions)
+// muni du secret partagé. Sans CRON_SECRET configuré (dev local), la vérification est ignorée.
+function checkAuth(req, res) {
+  const secret = process.env.CRON_SECRET;
+  if (!secret) return true;
+  const provided = req.get("x-cron-secret") || req.query.secret;
+  if (provided !== secret) {
+    res.status(401).json({ status: "error", message: "Non autorisé" });
+    return false;
+  }
+  return true;
+}
 
 app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Scraper API en ligne 🚀' });
 });
 
 app.get('/run-scrapers', async (req, res) => {
-    // Récupération du paramètre de l’URL, ex: /run-scrapers?scraper=immonot
-    const { scraper } = req.query;
+  if (!checkAuth(req, res)) return;
 
-    console.log(`📩 [Handler] Appel reçu pour le scraper ${scraper}!`);
-    // if (isScrapeRunning) {
-    //     return res.status(409).json({
-    //       status: "already_running",
-    //       message: "Un scraping est déjà en cours. Réessayez plus tard.",
-    //     });
-    // }
+  const { scraper } = req.query;
+  console.log(`📩 [Handler] Appel reçu pour le scraper ${scraper}!`);
 
-    try {
-      isScrapeRunning = true;
-      const startTime = Date.now();
-      await initDb();
+  try {
+    await initDb();
 
-      if (scraper === "immonot") {
-        await immonotScraper();
-        await updateScanTable("Immonot", startTime);
-      } else if (scraper === "kermarrec") {
-        await kermarrecScraper();
-        await updateScanTable("Kermarrec", startTime);
-      } else if (scraper === "era") {
-        await eraScraper();
-        await updateScanTable("ERA", startTime);
-      } else if (scraper === "blot") {
-        await blotScraper();
-        await updateScanTable("Blot", startTime);
-      } else if (scraper === "carnot") {
-        await carnotScraper();
-        await updateScanTable("Carnot", startTime);
-      } else if (scraper === "diard") {
-        await diardScraper();
-        await updateScanTable("Diard", startTime);
-      } else if (scraper === "penn") {
-        await pennScraper();
-        await updateScanTable("Penn", startTime);
-      } else if (scraper === "century") {
-        await centuryScraper();
-        await updateScanTable("Century 21", startTime);
-      } else if (scraper === "bretilimmo") {
-        await bretilimmoScraper();
-        await updateScanTable("Bretil'Immo", startTime);
-      } else if (scraper === "boyer") {
-        await boyerScraper();
-        await updateScanTable("Boyer Immobilier", startTime);
-      } else if (scraper === "notaires-bretons") {
-        await notairesBretonsScraper();
-        await updateScanTable("Notaires et Bretons", startTime);
-      } else if (scraper === "immobilier-notaires") {
-        await immobilierNotairesScraper();
-        await updateScanTable("Immobilier Notaires", startTime);
-      } else if (scraper === "figaro-immobilier") {
-        await figaroImmobilierScraper();
-        await updateScanTable("Figaro Immobilier", startTime);
-      } else if (scraper === "acheter-louer") {
-        await acheterLouerScraper();
-        await updateScanTable("Acheter-louer", startTime);
-      } else if (scraper === "bien-ici") {
-        await bienIciScraper();
-        await updateScanTable("Bien-ici", startTime);
-      } else if (scraper === "fnaim") {
-        await fnaimScraper();
-        await updateScanTable("FNAIM", startTime);
-      } else if (scraper === "ouest-france") {
-        await ouestFranceScraper();
-        await updateScanTable("Ouest-France Immo", startTime);
-      } else {
-        // Liste des scrapers avec leurs noms d'API
-        const scrapers = [
-          { name: "kermarrec", displayName: "Kermarrec" },
-          { name: "era", displayName: "ERA" },
-          { name: "blot", displayName: "Blot" },
-          { name: "carnot", displayName: "Carnot" },
-          { name: "penn", displayName: "Penn" },
-          { name: "diard", displayName: "Diard" },
-          { name: "century", displayName: "Century 21" },
-          { name: "bretilimmo", displayName: "Bretil'Immo" },
-          { name: "boyer", displayName: "Boyer Immobilier" },
-          { name: "notaires-bretons", displayName: "Notaires et Bretons" },
-          { name: "immobilier-notaires", displayName: "Immobilier Notaires" },
-          { name: "figaro-immobilier", displayName: "Figaro Immobilier" },
-          { name: "acheter-louer", displayName: "Acheter-louer" },
-          { name: "immonot", displayName: "Immonot" },
-          { name: "fnaim", displayName: "FNAIM" },
-          { name: "ouest-france", displayName: "Ouest-France Immo" }
-        ];
-
-        // Exécution séquentielle des appels HTTP pour chaque scraper
-        for (const { name, displayName } of scrapers) {
-          try {
-            console.log(`🚀 Démarrage du scraper ${displayName}...`);
-            await fetch(`http://localhost:8080/run-scrapers?scraper=${name}`);
-          } catch (error) {
-            console.error(`❌ Erreur lors de l'appel à l'API pour ${displayName}:`, error);
-            // On continue avec le scraper suivant même en cas d'erreur
-          }
-        }
-
-        // Mise à jour pour le scan complet "all"
-        await updateScanTable("All", startTime);
-      }
-      
-      res.json({ status: "running", message: "Scrapers " + scraper + " démarrés." });
-    } catch (e) {
-      console.error("❌ Erreur dans /run-scrapers:", e);
-      res.json({ status: "error", message: e.message });
-    } finally {
-      isScrapeRunning = false;
+    if (scraper && !SCRAPERS[scraper]) {
+      res.status(400).json({ status: "error", message: `Scraper inconnu: ${scraper}` });
+      return;
     }
-  }
-);
 
-const port = process.env.PORT || 8080;
-app.listen(port, async () => {
-  console.log(`✅ API active sur port ${port}`);
-  await initDb();
+    if (scraper) {
+      const { fn, displayName } = SCRAPERS[scraper];
+      const startTime = Date.now();
+      await fn();
+      await updateScanTable(displayName, startTime);
+      res.json({ status: "done", message: `Scraper ${scraper} terminé.` });
+      return;
+    }
+
+    // Aucun scraper précisé : lance tout séquentiellement. Réservé à un usage local/manuel —
+    // sur Vercel, préférer un appel par scraper (voir workflow GitHub Actions) pour rester
+    // sous la limite de durée d'exécution d'une fonction serverless.
+    for (const [name, { fn, displayName }] of Object.entries(SCRAPERS)) {
+      try {
+        console.log(`🚀 Démarrage du scraper ${displayName}...`);
+        const startTime = Date.now();
+        await fn();
+        await updateScanTable(displayName, startTime);
+      } catch (error) {
+        console.error(`❌ Erreur lors du scraper ${displayName}:`, error);
+      }
+    }
+    res.json({ status: "done", message: "Tous les scrapers ont été exécutés." });
+  } catch (e) {
+    console.error("❌ Erreur dans /run-scrapers:", e);
+    res.status(500).json({ status: "error", message: e.message });
+  }
 });
+
+// En local (npm start) on démarre un vrai serveur HTTP ; sur Vercel, l'app Express
+// est utilisée directement comme handler de fonction serverless (voir api/index.js).
+if (!process.env.VERCEL) {
+  const port = process.env.PORT || 8080;
+  app.listen(port, async () => {
+    console.log(`✅ API active sur port ${port}`);
+    await initDb();
+  });
+}
+
+export default app;

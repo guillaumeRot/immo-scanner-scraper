@@ -32,14 +32,14 @@
 
 ⌛ Leboncoin(trop complexe de bypass les 403)
 ⌛ SeLoger(trop complexe de bypass les 403)
-✅ OuestFranceImmo
+⛔ OuestFranceImmo (désactivé — nécessite Playwright + stealth, incompatible Vercel)
 ✅ BienIci
 ⌛ PAP (résultat des annonces bizarre)
 
-✅ LogicImmo(a fonctionné mais retourne des 403 maintenant. Essayer en headful ?)
+⛔ LogicImmo (désactivé — DataDome, incompatible Vercel)
 ✅ acheter-louer.fr
 ⌛ proprietes-privees.com (pas de résultats pour l'instant)
-✅ immobilier.lefigaro.com
+⛔ immobilier.lefigaro.com (désactivé — Cloudflare Bot Management, incompatible Vercel)
 
 ---
 
@@ -60,12 +60,21 @@
 | **Century 21**          | fetch + cheerio            | Site SSR                                                                               |
 | **Penn**                | fetch + cheerio            | Site SSR                                                                               |
 | **Notaires-bretons**    | fetch + cheerio            | Site SSR                                                                               |
-| **Blot**                | Playwright (optimisé)     | SPA AJAX — ressources bloquées,`waitForSelector` au lieu de `networkidle`            |
-| **Logic-immo**          | Playwright                 | DataDome présent, Playwright headless fonctionne parfois                              |
-| **Immonot**             | fetch + cheerio            | Site SSR, URLs directes par ville/type                                                 |
+| **Blot**                | fetch + API AJAX interne   | Rejoue les appels `admin-ajax.php` du plugin `blot-search` (town_search → search_form_validate → search_form_get_results → clean_vendus → view_result), aucun navigateur nécessaire |
+| **Immonot**             | fetch + cheerio + JSON-LD  | Site SSR, données structurées `BuyAction` + libellés `.props-realty__item`             |
 | **FNAIM**               | fetch + cheerio            | Site SSR — URL de recherche directe avec paramètres encodés                         |
-| **Ouest-France**        | fetch + cheerio            | SSR avec headers Sec-Fetch requis, photos via srcset (meilleure résolution par photo) |
-| **Immobilier-Figaro**   | Playwright (optimisé)      | SPA Nuxt — données via `__NUXT_DATA__`, ressources bloquées, `waitForSelector`        |
+
+## Scrapers désactivés (Playwright requis)
+
+Ces 3 scrapers ne tournent plus dans le déploiement Vercel : ils nécessitent un vrai navigateur
+(protection anti-bot avec challenge JS), incompatible avec une fonction serverless. Le code reste
+dans `src/sites/` pour référence mais n'est plus importé par `src/app.js`.
+
+| Site                  | Protection                    | Détail                                                                 |
+| ---------------------- | ------------------------------ | ----------------------------------------------------------------------- |
+| **Logic-immo**         | DataDome                       | Challenge JS, aucun contournement fiable trouvé                        |
+| **Immobilier-Figaro**  | Cloudflare Bot Management      | Challenge JS (`__cf_bm`), aucun contournement fiable trouvé            |
+| **Ouest-France Immo**  | Challenge maison (détection headless) | Un vrai Chrome headless est bloqué ; seul un navigateur headless "stealth" (`playwright-extra` + plugin stealth) passe — jugé trop fragile pour un scraper automatisé sans surveillance |
 
 ## Sites bloqués (non scrapables)
 

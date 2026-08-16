@@ -1,12 +1,13 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
 const BASE_URL = "https://www.diard-immobilier.fr";
-const LIST_URL =
+const BASE_LIST_URL =
   `${BASE_URL}/catalog/advanced_search_result.php?action=update_search` +
   `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Vente` +
   `&C_27_search=EGAL&C_27_type=UNIQUE&C_27=2` +
-  `&C_30_MAX=400000&C_30_search=COMPRIS&C_30_type=NUMBER`;
+  `&C_30_MAX=400000&C_30_search=COMPRIS&C_30_type=NUMBER` +
+  `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
 
 const HEADERS = {
   "User-Agent":
@@ -76,8 +77,16 @@ async function scrapeDetailPage(url) {
 }
 
 export const diardScraper = async () => {
+  const villeRows = await getVilleParams("diard");
+  if (!villeRows.length) {
+    console.warn("⚠️ Diard - Aucune ville configurée en base");
+    return;
+  }
+
   const liensActuels = [];
-  let currentUrl = LIST_URL;
+
+  for (const row of villeRows) {
+  let currentUrl = BASE_LIST_URL + encodeURIComponent(row.params.C_65);
 
   while (currentUrl) {
     console.log(`🔎 Diard - Page de liste : ${currentUrl}`);
@@ -117,6 +126,7 @@ export const diardScraper = async () => {
 
     currentUrl = nextUrl;
   }
+  } // fin boucle villes
 
   await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
   console.log("✅ Diard - Scraping terminé !");

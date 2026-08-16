@@ -1,98 +1,14 @@
-import * as cheerio from "cheerio";
+import { PlaywrightCrawler, RequestQueue } from "crawlee";
+import { addExtra } from "playwright-extra";
+import { chromium as baseChromium } from "playwright";
+import StealthPlugin from "puppeteer-extra-plugin-stealth";
 import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
 
-const BASE_URL = "https://www.ouestfrance-immo.com";
-const HEADERS = {
-  "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-  "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,*/*;q=0.8",
-  "Accept-Language": "fr-FR,fr;q=0.9",
-  "Accept-Encoding": "gzip, deflate, br",
-  "Sec-Fetch-Dest": "document",
-  "Sec-Fetch-Mode": "navigate",
-  "Sec-Fetch-Site": "none",
-  "Sec-Fetch-User": "?1",
-  "Upgrade-Insecure-Requests": "1",
-};
-
-async function fetchHtml(url, retries = 3) {
-  for (let i = 0; i < retries; i++) {
-    if (i > 0) await new Promise(r => setTimeout(r, 2000 * i));
-    try {
-      const res = await fetch(url, { headers: HEADERS });
-      if (res.ok) return res.text();
-    } catch (e) {
-      if (i === retries - 1) throw e;
-    }
-  }
-  throw new Error(`HTTP fetch failed for ${url}`);
-}
-
-async function scrapeListPage(url) {
-  const html = await fetchHtml(url);
-  const $ = cheerio.load(html);
-  const links = new Set();
-  $("article.card-annonce a[href*='/immobilier/vente/']").each((_, el) => {
-    const href = $(el).attr("href");
-    if (href) links.add((href.startsWith("http") ? href : BASE_URL + href).split("?")[0]);
-  });
-  const nextHref = $('a[data-t="page-suivante"]').attr("href");
-  const nextUrl = nextHref ? (nextHref.startsWith("http") ? nextHref : BASE_URL + nextHref) : null;
-  return { links: [...links], nextUrl };
-}
-
-function getInfo($, label) {
-  let val = "";
-  $(".detail-info").each((_, el) => {
-    if ($(el).find(".detail-info__label").text().toLowerCase().includes(label.toLowerCase())) {
-      val = $(el).find(".detail-info__value").text().trim();
-    }
-  });
-  return val;
-}
-
-function extractPhotos(html, annonceId) {
-  const byKey = new Map();
-  for (const [, srcset] of html.matchAll(/srcset="([^"]+)"/g)) {
-    if (!srcset.includes(annonceId)) continue;
-    for (const entry of srcset.split(",")) {
-      const parts = entry.trim().split(/\s+/);
-      if (parts.length < 2) continue;
-      const [url, sizeStr] = parts;
-      const size = parseInt(sizeStr) || 0;
-      const key = url.replace(/_rcrop_\d+-\d+_/, "_");
-      const existing = byKey.get(key);
-      if (!existing || size > existing.size) {
-        byKey.set(key, { url, size });
-      }
-    }
-  }
-  return [...new Set([...byKey.values()].map(v => v.url))];
-}
-
-async function scrapeDetailPage(url) {
-  const annonceId = url.match(/\/(\d+)\.htm$/)?.[1];
-  const html = await fetchHtml(url);
-  const $ = cheerio.load(html);
-
-  const titleEl = $("h2.detail-page__title").text().trim();
-  const [typeRaw, ...villeParts] = titleEl.split(" ");
-  const type = typeRaw.toLowerCase().includes("immeuble") ? "immeuble" : "maison";
-  const ville = villeParts.join(" ").trim();
-
-  const prix = parseInt(getInfo($, "Prix").split("€")[0].replace(/[^0-9]/g, "")) || 0;
-  const surface = parseInt(getInfo($, "Surface habitable").replace(/[^0-9]/g, "")) || 0;
-  const pieces = parseInt(getInfo($, "Pièces")) || 0;
-  const chambres = parseInt(getInfo($, "Chambres")) || 0;
-
-  const description = $(".detail-description .detail-description__text-part")
-    .map((_, el) => $(el).text().trim()).get()
-    .filter(t => t && !t.includes("georisques.gouv.fr"))
-    .join("\n");
-
-  const photos = extractPhotos(html, annonceId);
-
-  return { type, prix, ville, surface, pieces, chambres, description, photos, dpe: null, ges: null };
-}
+// Le Chromium headless "nu" se fait bloquer par le challenge anti-bot du site
+// (headless: false passe, headless: true reste bloqué sur "Challenge Validation").
+// Le plugin stealth masque les traces d'automatisation détectées par le challenge.
+const chromium = addExtra(baseChromium);
+chromium.use(StealthPlugin());
 
 export const ouestFranceScraper = async () => {
   const villeRows = await getVilleParams("ouest-france");
@@ -100,35 +16,175 @@ export const ouestFranceScraper = async () => {
     console.warn("⚠️ Ouest-France Immo - Aucune ville configurée en base");
     return;
   }
-  const lieux    = villeRows.map(r => r.params.lieu_id).join(",");
-  const LIST_URL = `${BASE_URL}/acheter/?prix=0_400000&types=maison,immeuble&lieux=${lieux}`;
+  const lieux = villeRows.map(r => r.params.lieu_id).join(",");
+
+  const requestQueue = await RequestQueue.open(`ouest-france-${Date.now()}`);
+  await requestQueue.addRequest({
+    url: `https://www.ouestfrance-immo.com/acheter/?prix=0_400000&types=maison,immeuble&lieux=${lieux}`,
+    userData: { label: "LIST_PAGE" },
+  });
 
   const liensActuels = [];
-  let currentUrl = LIST_URL;
 
-  while (currentUrl) {
-    const { links, nextUrl } = await scrapeListPage(currentUrl);
-    console.log(`📌 Ouest-France Immo - ${links.length} annonces sur ${currentUrl}`);
+  const crawler = new PlaywrightCrawler({
+    requestQueue,
+    maxConcurrency: 1,
+    requestHandlerTimeoutSecs: 180,
+    navigationTimeoutSecs: 30,
+    maxRequestRetries: 1,
+    preNavigationHooks: [
+      async ({ blockRequests }) => {
+        await blockRequests({
+          urlPatterns: [
+            ".png", ".jpg", ".jpeg", ".webp", ".gif", ".svg",
+            ".css", ".woff", ".woff2", ".ttf",
+            "google-analytics", "googletagmanager", "hotjar",
+            "mapbox", "facebook", "doubleclick",
+          ],
+        });
+      },
+    ],
+    launchContext: {
+      launcher: chromium,
+      launchOptions: {
+        headless: true,
+        args: [
+          "--no-sandbox",
+          "--disable-setuid-sandbox",
+          "--disable-dev-shm-usage",
+          "--disable-gpu",
+          "--single-process",
+          "--no-zygote",
+        ],
+      },
+    },
+    async requestHandler({ page, request, log }) {
+      const { label } = request.userData;
 
-    for (const url of links) {
+      // Bannière cookies Didomi (peut apparaître sur liste ou détail)
       try {
-        const data = await scrapeDetailPage(url);
-        if (data.ville && data.prix) {
-          await insertAnnonce({ ...data, agence: "Ouest-France Immo", lien: url });
-          liensActuels.push(url);
-        } else {
-          console.warn(`⚠️ Ouest-France Immo - Données incomplètes pour ${url}`);
-          await insertErreur("Ouest-France Immo", url, "Données incomplètes (ville ou prix manquant)");
+        const acceptButton = await page
+          .waitForSelector("#didomi-notice-agree-button", { timeout: 5000 })
+          .catch(() => null);
+        if (acceptButton) {
+          await acceptButton.click();
         }
       } catch (err) {
-        console.error(`❌ Ouest-France Immo - Erreur sur ${url}: ${err.message}`);
-        await insertErreur("Ouest-France Immo", url, String(err));
+        log.warn(`⚠️ Ouest-France Immo - Erreur bannière cookies: ${err.message}`);
       }
-      await new Promise(r => setTimeout(r, 300));
-    }
-    currentUrl = nextUrl;
-  }
 
-  await deleteMissingAnnonces("Ouest-France Immo", [...new Set(liensActuels)]);
+      // Étape 1 — Pages de liste
+      if (label === "LIST_PAGE") {
+        log.info(`🔎 Ouest-France Immo - Page de liste : ${request.url}`);
+
+        await page.goto(request.url, { waitUntil: "domcontentloaded" });
+        await page.waitForSelector("article.card-annonce", { timeout: 15000 });
+
+        const links = await page.$$eval(
+          "article.card-annonce a[href*='/immobilier/vente/'], article.card-annonce a[href*='/vente-maison/']",
+          (anchors) => [...new Set(anchors.map((a) => a.href.split("?")[0]))]
+        );
+
+        log.info(`📌 Ouest-France Immo - ${links.length} annonces trouvées sur cette page.`);
+
+        for (const url of links) {
+          await requestQueue.addRequest({ url, userData: { label: "DETAIL_PAGE" } });
+        }
+
+        const nextHref = await page
+          .$eval('a[data-t="page-suivante"]', (a) => a.getAttribute("href"))
+          .catch(() => null);
+
+        if (nextHref) {
+          const nextUrl = nextHref.startsWith("http") ? nextHref : `https://www.ouestfrance-immo.com${nextHref}`;
+          log.info(`➡️ Ouest-France Immo - Page suivante détectée : ${nextUrl}`);
+          await requestQueue.addRequest({ url: nextUrl, userData: { label: "LIST_PAGE" } });
+        }
+      }
+
+      // Étape 2 — Pages de détail
+      if (label === "DETAIL_PAGE") {
+        try {
+          log.info(`📄 Ouest-France Immo - Page détail : ${request.url}`);
+
+          await page.goto(request.url, { waitUntil: "domcontentloaded" });
+
+          const property = await page.evaluate(() => {
+            const titleElement = document.querySelector("h2.detail-page__title");
+            let type = "Non spécifié";
+            let ville = "";
+            if (titleElement) {
+              const [typeRaw, ...villeParts] = titleElement.textContent.trim().split(" ");
+              type = typeRaw.toLowerCase().includes("immeuble") ? "immeuble" : "maison";
+              ville = villeParts.join(" ").trim();
+            }
+
+            const getInfoValue = (labelText) => {
+              const labelEl = Array.from(document.querySelectorAll(".detail-info__label")).find((el) =>
+                el.textContent.trim().toLowerCase().includes(labelText.toLowerCase())
+              );
+              return labelEl?.closest(".detail-info")?.querySelector(".detail-info__value")?.textContent.trim() || "";
+            };
+
+            const surface = parseInt(getInfoValue("Surface habitable").replace(/[^0-9]/g, "")) || 0;
+            const pieces = parseInt(getInfoValue("Pièces")) || 0;
+            const chambres = parseInt(getInfoValue("Chambres")) || 0;
+            const prix = parseInt(getInfoValue("Prix").split("€")[0].replace(/[^0-9]/g, "")) || 0;
+
+            const description = Array.from(document.querySelectorAll(".detail-description .detail-description__text-part"))
+              .map((p) => p.textContent.trim())
+              .filter((t) => t && !t.includes("georisques.gouv.fr"))
+              .join("\n");
+
+            const photos = Array.from(document.querySelectorAll(".detail-slider-annonce__photo img[srcset]"))
+              .map((img) => {
+                const srcset = img.getAttribute("srcset");
+                if (!srcset) return null;
+                return srcset
+                  .split(",")
+                  .map((s) => s.trim().split(" "))
+                  .filter((parts) => parts.length >= 2)
+                  .reduce((largest, current) => (parseInt(current[1]) > parseInt(largest[1] || "0") ? current : largest), ["", "0"])[0];
+              })
+              .filter(Boolean);
+
+            return { type, ville, prix, surface, pieces, chambres, description, photos };
+          });
+
+          if (property.ville && property.prix) {
+            await insertAnnonce({
+              type: property.type,
+              prix: property.prix,
+              ville: property.ville,
+              pieces: property.pieces,
+              chambres: property.chambres,
+              surface: property.surface,
+              description: property.description,
+              photos: property.photos,
+              dpe: null,
+              ges: null,
+              agence: "Ouest-France Immo",
+              lien: request.url,
+            });
+            liensActuels.push(request.url);
+          } else {
+            log.warning(`⚠️ Ouest-France Immo - Données incomplètes pour ${request.url}`);
+            await insertErreur("Ouest-France Immo", request.url, "Données incomplètes (ville ou prix manquant)");
+          }
+        } catch (err) {
+          log.error(`❌ Ouest-France Immo - Erreur sur ${request.url}: ${err.message}`);
+          await insertErreur("Ouest-France Immo", request.url, String(err));
+        }
+      }
+    },
+
+    failedRequestHandler({ request, log }) {
+      log.error(`🚨 Ouest-France Immo - Échec permanent pour ${request.url}`);
+    },
+  });
+
+  await crawler.run();
+
+  await deleteMissingAnnonces("Ouest-France Immo", Array.from(new Set(liensActuels)));
   console.log("✅ Ouest-France Immo - Scraping terminé !");
 };

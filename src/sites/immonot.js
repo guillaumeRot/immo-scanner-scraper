@@ -25,48 +25,64 @@ async function scrapeListPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
   const links = [];
-  $("a.js-mirror-link").each((_, el) => {
+  // Scoper sous .card-immo-li : quand la recherche ne renvoie aucun résultat, la page
+  // affiche un carrousel "recherches similaires" qui réutilise le même motif de lien
+  // mais avec des biens hors zone (autres villes) — il faut l'exclure.
+  $('.card-immo-li a[href^="/immobilier-notaire/detail/"]').each((_, el) => {
     const href = $(el).attr("href");
     if (href) links.push(href.startsWith("http") ? href : BASE_URL + href);
   });
-  const nextHref = $('a.page-link[rel="next"]').attr("href");
+  const nextHref = $('link[rel="next"]').attr("href");
   const nextUrl = nextHref ? (nextHref.startsWith("http") ? nextHref : BASE_URL + nextHref) : null;
   return { links, nextUrl };
 }
 
+// Fiche produit : les libellés "Nombre de pièces", "Chambres", "Surface habitable"
+// sont rendus en paires <p class="text-sm text-gray-4">label</p><p class="text-base font-bold">valeur</p>
 function getSpec($, label) {
   let value = "";
-  $("dl.id-spec").each((_, el) => {
-    if ($(el).find("dt").text().trim() === label) {
-      // Use first text node to avoid concatenation with <sup>2</sup> in surface fields
-      value = $(el).find("dd").contents().first().text().trim();
+  $("p.text-sm.text-gray-4").each((_, el) => {
+    if ($(el).text().trim() === label) {
+      value = $(el).next("p.text-base.font-bold").text().trim();
     }
   });
   return value;
+}
+
+// Données structurées JSON-LD (BuyAction) : plus fiable que le HTML pour prix/ville/description/photos
+function extractBuyAction($) {
+  let buyAction = null;
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).html());
+      const node = (data["@graph"] || []).find(n => n["@type"] === "BuyAction");
+      if (node) buyAction = node;
+    } catch {}
+  });
+  return buyAction;
 }
 
 async function scrapeDetailPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
-  const typeRaw = $(".id-title-type").first().text().trim().toLowerCase();
+  const buyAction = extractBuyAction($);
+
+  const typeRaw = $(".hero-detail-subtitle").first().text().trim().toLowerCase();
   const type = typeRaw.includes("immeuble") ? "immeuble" : "maison";
-  const prix = parseInt($(".id-price-amount").first().text().replace(/\D/g, "")) || 0;
-  const ville = $(".id-title-location").first().text().trim();
-  const description = $(".id-desc-body").first().text().trim();
+  const prix = parseInt(buyAction?.price) || 0;
+  const ville = (buyAction?.location?.address?.addressLocality || "").replace(/\s*\([^)]*\)/g, "").trim();
+  const description = (buyAction?.object?.description || "").trim();
+  const photos = buyAction?.object?.image || [];
   const surface = parseFloat(getSpec($, "Surface habitable")) || 0;
-  const pieces = parseInt(getSpec($, "Pièces")) || 0;
+  const pieces = parseInt(getSpec($, "Nombre de pièces")) || 0;
   const chambres = parseInt(getSpec($, "Chambres")) || 0;
 
-  const photos = [];
-  $("#js-lightgallery a").each((_, el) => {
-    const href = $(el).attr("href");
-    if (href && !href.startsWith("#")) {
-      photos.push(href.startsWith("//") ? "https:" + href : href);
-    }
-  });
+  // DPE et GES réutilisent le même attribut data-dpe-classe sur deux <figure> distincts (ordre : DPE puis GES)
+  const dpe = $("[data-dpe-classe]").eq(0).attr("data-dpe-classe") || null;
+  const ges = $("[data-dpe-classe]").eq(1).attr("data-dpe-classe") || null;
 
-  return { type, prix, ville, surface, pieces, chambres, description, photos, dpe: null, ges: null };
+  return { type, prix, ville, surface, pieces, chambres, description, photos, dpe, ges };
 }
 
 export const immonotScraper = async () => {
