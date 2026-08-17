@@ -21,12 +21,25 @@ const HEADERS = {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
+// Le serveur Diard répond parfois par un 504 après une trentaine de secondes (constaté :
+// une seule fiche en erreur a fait passer un run entier de ~8s à 90s, dépassant la limite
+// de 60s d'une fonction Vercel). Sans timeout explicite, fetch() attend aussi longtemps
+// que le serveur/proxy distant le décide — on borne donc chaque requête à 15s.
 async function fetchHtml(url) {
-  const res = await fetch(url, { headers: HEADERS });
-  if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
-  // Le site utilise ISO-8859-1
-  const buf = await res.arrayBuffer();
-  return new TextDecoder("iso-8859-1").decode(buf);
+  const controller = new AbortController();
+  const timeout = setTimeout(() => controller.abort(), 15000);
+  try {
+    const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
+    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    // Le site utilise ISO-8859-1
+    const buf = await res.arrayBuffer();
+    return new TextDecoder("iso-8859-1").decode(buf);
+  } catch (err) {
+    if (err.name === "AbortError") throw new Error(`Timeout (15s) on ${url}`);
+    throw err;
+  } finally {
+    clearTimeout(timeout);
+  }
 }
 
 async function scrapeListPage(url) {
