@@ -24,10 +24,12 @@ const HEADERS = {
 // Le serveur Diard répond parfois par un 504 après une trentaine de secondes (constaté :
 // une seule fiche en erreur a fait passer un run entier de ~8s à 90s, dépassant la limite
 // de 60s d'une fonction Vercel). Sans timeout explicite, fetch() attend aussi longtemps
-// que le serveur/proxy distant le décide — on borne donc chaque requête à 15s.
-async function fetchHtml(url) {
+// que le serveur/proxy distant le décide — on borne donc chaque requête à 10s, avec un
+// seul réessai en cas de timeout (une vraie erreur HTTP comme un 500 n'est elle jamais
+// réessayée : ce n'est pas un problème transitoire de réseau, ça remonte tel quel).
+async function fetchOnce(url) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 15000);
+  const timeout = setTimeout(() => controller.abort(), 10000);
   try {
     const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
     if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
@@ -35,10 +37,24 @@ async function fetchHtml(url) {
     const buf = await res.arrayBuffer();
     return new TextDecoder("iso-8859-1").decode(buf);
   } catch (err) {
-    if (err.name === "AbortError") throw new Error(`Timeout (15s) on ${url}`);
+    if (err.name === "AbortError") {
+      const timeoutErr = new Error(`Timeout (10s) on ${url}`);
+      timeoutErr.isTimeout = true;
+      throw timeoutErr;
+    }
     throw err;
   } finally {
     clearTimeout(timeout);
+  }
+}
+
+async function fetchHtml(url) {
+  try {
+    return await fetchOnce(url);
+  } catch (err) {
+    if (!err.isTimeout) throw err; // HTTP 500 etc. : pas de réessai, on relance direct
+    console.warn(`⚠️ Diard - Timeout, réessai unique : ${url}`);
+    return await fetchOnce(url); // 2e et dernière tentative ; si elle timeout aussi, l'erreur remonte
   }
 }
 
@@ -146,7 +162,15 @@ export const diardLocationScraper = async () => {
 
     while (currentUrl) {
       console.log(`🔎 Diard (location) - Page de liste : ${currentUrl}`);
-      const { links, nextUrl } = await scrapeListPage(currentUrl);
+      let links, nextUrl;
+      try {
+        ({ links, nextUrl } = await scrapeListPage(currentUrl));
+      } catch (err) {
+        if (!err.isTimeout) throw err; // erreur HTTP (500...) : on laisse remonter, pas de faux succès
+        console.error(`❌ Diard (location) - Timeout persistant sur la page de liste ${currentUrl}`);
+        await insertErreur("Diard (location)", currentUrl, String(err));
+        break; // on passe à la ville suivante plutôt que de planter tout le scraper
+      }
       console.log(`📌 Diard (location) - ${links.length} annonces trouvées.`);
 
       for (const url of links) {
@@ -201,7 +225,15 @@ export const diardScraper = async () => {
 
   while (currentUrl) {
     console.log(`🔎 Diard - Page de liste : ${currentUrl}`);
-    const { links, nextUrl } = await scrapeListPage(currentUrl);
+    let links, nextUrl;
+    try {
+      ({ links, nextUrl } = await scrapeListPage(currentUrl));
+    } catch (err) {
+      if (!err.isTimeout) throw err; // erreur HTTP (500...) : on laisse remonter, pas de faux succès
+      console.error(`❌ Diard - Timeout persistant sur la page de liste ${currentUrl}`);
+      await insertErreur("Diard", currentUrl, String(err));
+      break; // on passe à la ville suivante plutôt que de planter tout le scraper
+    }
     console.log(`📌 Diard - ${links.length} annonces trouvées.`);
 
     for (const url of links) {
