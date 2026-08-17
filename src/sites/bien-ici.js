@@ -146,6 +146,7 @@ export const bienIciLocationScraper = async () => {
   // la première occurrence par empreinte (ville+loyer+surface+pieces+description) pour
   // éviter de saturer les résultats avec des doublons quasi identiques.
   const empreintesVues = new Set();
+  let horsMarcheIgnorees = 0;
 
   for (const row of villeRows) {
     const zoneIds = [row.params.zone_id];
@@ -166,6 +167,15 @@ export const bienIciLocationScraper = async () => {
       console.log(`📌 Bien-ici (location) - ${row.nom} : ${from + ads.length}/${total} annonces récupérées`);
 
       for (const ad of ads) {
+        // Sur la zone Vitré/Châteaugiron, l'index location de Bien-ici contient énormément
+        // d'annonces retirées (constaté : ~99% avec status.onTheMarket=false et une
+        // publicationDate à l'epoch Unix 1970-01-01, contre des dates fraîches et un ratio
+        // normal sur d'autres zones comme Rennes ou Paris) : le lien mène alors à une fiche
+        // qui n'existe plus. On ne garde que les annonces explicitement encore sur le marché.
+        if (ad.status?.onTheMarket !== true) {
+          horsMarcheIgnorees++;
+          continue;
+        }
         const lien = `https://www.bienici.com/annonce/${ad.id}`;
         try {
           const data = parseAd(ad);
@@ -203,6 +213,7 @@ export const bienIciLocationScraper = async () => {
     }
   }
 
+  console.log(`ℹ️ Bien-ici (location) - ${horsMarcheIgnorees} annonces hors marché ignorées.`);
   await deleteMissingAnnoncesLocation("Bien-ici", [...new Set(liensActuels)]);
   console.log("✅ Bien-ici (location) - Scraping terminé !");
 };
