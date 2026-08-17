@@ -79,7 +79,7 @@ Liste des 15 scrapers de vente actifs (valeur du paramètre `scraper`) :
 ```
 kermarrec, era, blot, carnot, penn, diard, century, bretilimmo,
 boyer, notaires-bretons, immobilier-notaires, acheter-louer,
-bien-ici, immonot, fnaim
+bien-ici, immonot, fnaim, laforet, square-habitat
 ```
 
 Liste des 9 scrapers de location (appartements, table `AnnonceLocation` séparée) :

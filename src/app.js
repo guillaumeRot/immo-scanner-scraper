@@ -16,6 +16,8 @@ import { immobilierNotairesScraper } from './sites/immobilier-notaires.js';
 import { acheterLouerScraper, acheterLouerLocationScraper } from './sites/acheter-louer.js';
 import { bienIciScraper, bienIciLocationScraper } from './sites/bien-ici.js';
 import { fnaimScraper } from './sites/fnaim.js';
+import { laforetScraper } from './sites/laforet.js';
+import { squareHabitatScraper } from './sites/square-habitat.js';
 
 // Figaro Immobilier, Logic-immo et Ouest-France Immo sont désactivés : ils nécessitent
 // Playwright (protections anti-bot Cloudflare/DataDome/challenge maison), incompatible
@@ -42,6 +44,8 @@ const SCRAPERS = {
   "bien-ici": { fn: bienIciScraper, displayName: "Bien-ici" },
   "immonot": { fn: immonotScraper, displayName: "Immonot" },
   "fnaim": { fn: fnaimScraper, displayName: "FNAIM" },
+  "laforet": { fn: laforetScraper, displayName: "Laforêt" },
+  "square-habitat": { fn: squareHabitatScraper, displayName: "Square Habitat" },
 
   // Location (appartements) — mêmes agences, quand elles proposent de la location.
   // Century 21, Immobilier Notaires, Immonot, FNAIM et Penn n'ont pas de recherche

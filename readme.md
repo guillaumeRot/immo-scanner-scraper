@@ -30,16 +30,18 @@
 
 # Liste des sites d'annonces
 
-⌛ Leboncoin(trop complexe de bypass les 403)
+⌛ Leboncoin (DataDome — pas de contournement retenu, hors scope volontairement)
 ⌛ SeLoger(trop complexe de bypass les 403)
 ⛔ OuestFranceImmo (désactivé — nécessite Playwright + stealth, incompatible Vercel)
 ✅ BienIci
-⌛ PAP (résultat des annonces bizarre)
+⌛ PAP (Cloudflare Turnstile — challenge JS interactif non contournable sans browser réel)
 
 ⛔ LogicImmo (désactivé — DataDome, incompatible Vercel)
 ✅ acheter-louer.fr
-⌛ proprietes-privees.com (pas de résultats pour l'instant)
+⌛ proprietes-privees.com (site SSR accessible, mais robots.txt interdit explicitement /achat?page=*, /search-results et /annonces-immobilieres/* — non implémenté par respect de cette interdiction)
 ⛔ immobilier.lefigaro.com (désactivé — Cloudflare Bot Management, incompatible Vercel)
+✅ Laforêt (page ville statique via sitemap achat-maison-villes.xml, hors périmètre de leur robots.txt ; 0 annonce actuellement à Vitré/Châteaugiron)
+✅ Square Habitat (page ville statique via sitemap achat-maison-localisation.xml, hors périmètre de leur robots.txt ; recherche à rayon large, filtrée par ville)
 
 ---
 
