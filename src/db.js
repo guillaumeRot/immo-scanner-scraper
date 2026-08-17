@@ -6,30 +6,44 @@ const { Pool } = pg;
 // d'une fonction serverless (pas de connexion unique retenue, chaque requête passe
 // par pool.query() qui emprunte/rend une connexion au pooler Neon).
 let pool = null;
+// Verrou "single-flight" : plusieurs cron-job.org peuvent se déclencher au même instant
+// et être routés vers la même instance Vercel chaude. Sans ce verrou, deux appels
+// concurrents à initDb() voient tous les deux pool=null, lancent chacun leur propre
+// CREATE TABLE/ALTER TABLE (ensureTablesExists) → Postgres détecte un blocage mutuel
+// entre les deux transactions ("deadlock detected"), celui qui échoue remet pool à null
+// et fait planter l'autre appel en cours avec une erreur "Pool non initialisé".
+let initPromise = null;
 
 export async function initDb() {
   if (pool) return; // déjà connecté
+  if (initPromise) return initPromise; // une init est déjà en cours : attendre son résultat
 
-  try {
-    const url = process.env.DATABASE_URL;
-    if (!url || typeof url !== "string") {
-      throw new Error("DATABASE_URL manquante ou invalide. Vérifiez votre fichier .env");
+  initPromise = (async () => {
+    try {
+      const url = process.env.DATABASE_URL;
+      if (!url || typeof url !== "string") {
+        throw new Error("DATABASE_URL manquante ou invalide. Vérifiez votre fichier .env");
+      }
+
+      pool = new Pool({
+        connectionString: url,
+        ssl: { rejectUnauthorized: false },
+        max: 5,
+      });
+
+      console.log("✅ Connexion à la base de données PostgreSQL établie");
+
+      await ensureTablesExists();
+    } catch (err) {
+      console.error("❌ Erreur de connexion à la base de données:", err);
+      pool = null;
+      throw err;
+    } finally {
+      initPromise = null;
     }
+  })();
 
-    pool = new Pool({
-      connectionString: url,
-      ssl: { rejectUnauthorized: false },
-      max: 5,
-    });
-
-    console.log("✅ Connexion à la base de données PostgreSQL établie");
-
-    await ensureTablesExists();
-  } catch (err) {
-    console.error("❌ Erreur de connexion à la base de données:", err);
-    pool = null;
-    throw err;
-  }
+  return initPromise;
 }
 
 async function ensureTablesExists() {
