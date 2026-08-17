@@ -141,6 +141,11 @@ export const bienIciLocationScraper = async () => {
 
   const liensActuels = [];
   const size = 100;
+  // Certaines agences republient le même logement (même résidence, lot identique) sous
+  // plusieurs ids d'annonce distincts — jusqu'à 13 fois vu en pratique. On ne garde que
+  // la première occurrence par empreinte (ville+loyer+surface+pieces+description) pour
+  // éviter de saturer les résultats avec des doublons quasi identiques.
+  const empreintesVues = new Set();
 
   for (const row of villeRows) {
     const zoneIds = [row.params.zone_id];
@@ -164,7 +169,10 @@ export const bienIciLocationScraper = async () => {
         const lien = `https://www.bienici.com/annonce/${ad.id}`;
         try {
           const data = parseAd(ad);
+          const empreinte = `${data.ville}|${data.prix}|${data.surface}|${data.pieces}|${data.description}`;
+          if (empreintesVues.has(empreinte)) continue;
           if (data.ville && data.prix) {
+            empreintesVues.add(empreinte);
             await insertAnnonceLocation({
               type: "Appartement",
               loyer: data.prix,
