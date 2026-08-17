@@ -49,6 +49,9 @@ Dashboard Vercel → Project → Settings → Environment Variables :
 | --- | --- |
 | `DATABASE_URL` | La même que dans `.env` (Neon, déjà configuré avec pooler — compatible serverless) |
 | `CRON_SECRET` | Une valeur secrète aléatoire, ex. générée ci-dessous |
+| `GMAIL_USER` | Adresse Gmail utilisée pour l'envoi (`guillaume.rot@gmail.com`) |
+| `GMAIL_APP_PASSWORD` | Mot de passe d'application généré sur [myaccount.google.com/apppasswords](https://myaccount.google.com/apppasswords) (nécessite la validation en 2 étapes activée) — **pas** le mot de passe du compte |
+| `NOTIFY_EMAIL` | (optionnel) Adresse de destination des notifications, si différente de `GMAIL_USER` |
 
 Génère un secret avec :
 ```bash
@@ -101,6 +104,25 @@ https://ton-projet.vercel.app/run-scrapers?scraper=kermarrec&secret=e0509eed16a4
 ```
 (remplacer par ton vrai domaine Vercel et ton vrai `CRON_SECRET`, ne pas réutiliser
 l'exemple ci-dessus tel quel)
+
+## 2bis. Notifications par email des nouvelles annonces
+
+Crée **une tâche cron-job.org supplémentaire** (indépendante des scrapers) :
+
+- **URL** : `https://<ton-domaine-vercel>.vercel.app/send-notifications?secret=<CRON_SECRET>`
+- **Méthode** : GET
+- **Planification** : décalée de 15-20 min après chaque créneau de scraping (ex: si les
+  scrapers tournent à 4h/10h/16h UTC, planifier cette tâche à 4h20/10h20/16h20 UTC) — le
+  temps que tous les scrapers du créneau aient fini avant l'envoi du récapitulatif.
+
+Fonctionnement : chaque annonce nouvellement insérée démarre avec `notifie = false`. Cet
+endpoint réclame (de façon atomique, transaction SQL) toutes les lignes `notifie = false`
+de `Annonce` et `AnnonceLocation`, envoie **un seul email récapitulatif** s'il y en a, puis
+les marque `notifie = true`. Une mise à jour d'une annonce déjà connue (prix qui change,
+etc.) ne remet pas `notifie` à `false` — seules les vraies nouveautés déclenchent un email.
+
+⚠️ Si tu changes la fréquence des scrapers plus tard, pense à réajuster l'horaire de cette
+tâche pour qu'elle reste décalée après le nouveau créneau.
 
 ## 3. Nettoyage à décider
 

@@ -1,6 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
-import { initDb, updateScanTable } from './db.js';
+import { initDb, updateScanTable, claimUnnotifiedAnnonces } from './db.js';
+import { sendNewAnnoncesEmail } from './email.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper, kermarrecLocationScraper } from './sites/kermarrec.js';
 import { eraScraper, eraLocationScraper } from './sites/era.js';
@@ -65,8 +66,8 @@ const SCRAPERS = {
   "bien-ici-location": { fn: bienIciLocationScraper, displayName: "Bien-ici (location)" },
 };
 
-// Protège l'endpoint de scraping : appel réservé au workflow planifié (GitHub Actions)
-// muni du secret partagé. Sans CRON_SECRET configuré (dev local), la vérification est ignorée.
+// Protège les endpoints : appel réservé au workflow planifié (cron-job.org) muni du
+// secret partagé. Sans CRON_SECRET configuré (dev local), la vérification est ignorée.
 function checkAuth(req, res) {
   const secret = process.env.CRON_SECRET;
   if (!secret) return true;
@@ -121,6 +122,27 @@ app.get('/run-scrapers', async (req, res) => {
     res.json({ status: "done", message: "Tous les scrapers ont été exécutés." });
   } catch (e) {
     console.error("❌ Erreur dans /run-scrapers:", e);
+    res.status(500).json({ status: "error", message: e.message });
+  }
+});
+
+// Déclenché par un cron-job.org séparé (indépendant du rythme des scrapers) : regarde
+// s'il y a des annonces pas encore notifiées et, si oui, envoie un seul email récapitulatif.
+// Prévoir un décalage dans le planning cron-job.org (ex: 15-20 min après le créneau de
+// scraping) pour laisser le temps à tous les scrapers du lot de terminer avant l'envoi.
+app.get('/send-notifications', async (req, res) => {
+  if (!checkAuth(req, res)) return;
+
+  try {
+    await initDb();
+    const { ventes, locations } = await claimUnnotifiedAnnonces();
+    await sendNewAnnoncesEmail(ventes, locations);
+    res.json({
+      status: "done",
+      message: `${ventes.length} vente(s) et ${locations.length} location(s) notifiée(s).`,
+    });
+  } catch (e) {
+    console.error("❌ Erreur dans /send-notifications:", e);
     res.status(500).json({ status: "error", message: e.message });
   }
 });

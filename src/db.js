@@ -54,12 +54,14 @@ async function ensureTablesExists() {
       nb_t5 INTEGER DEFAULT 0,
       dpe VARCHAR(1),
       ges VARCHAR(1),
+      notifie BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       date_scraped TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
     CREATE INDEX IF NOT EXISTS idx_annonce_lien ON "Annonce"(lien);
     CREATE INDEX IF NOT EXISTS idx_annonce_agence ON "Annonce"(agence);
+    ALTER TABLE "Annonce" ADD COLUMN IF NOT EXISTS notifie BOOLEAN DEFAULT FALSE;
   `;
 
   const createErrorTableQuery = `
@@ -96,12 +98,14 @@ async function ensureTablesExists() {
       agence VARCHAR(100) NOT NULL,
       dpe VARCHAR(1),
       ges VARCHAR(1),
+      notifie BOOLEAN DEFAULT FALSE,
       created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
       date_scraped TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
     CREATE INDEX IF NOT EXISTS idx_annonce_location_lien ON "AnnonceLocation"(lien);
     CREATE INDEX IF NOT EXISTS idx_annonce_location_agence ON "AnnonceLocation"(agence);
+    ALTER TABLE "AnnonceLocation" ADD COLUMN IF NOT EXISTS notifie BOOLEAN DEFAULT FALSE;
   `;
 
   await pool.query(createLocationTableQuery);
@@ -679,6 +683,34 @@ export async function updateScanTable(scraper, startTime) {
   } catch (err) {
     console.error(`❌ Erreur mise à jour table Scan pour ${scraper}:`, err);
     throw err;
+  }
+}
+
+/**
+ * Réclame atomiquement toutes les annonces (vente + location) pas encore notifiées :
+ * les marque notifie=true dans la même transaction que la lecture, pour qu'un appel
+ * concurrent ne puisse jamais récupérer les mêmes lignes deux fois (évite les doublons
+ * d'email si /send-notifications est appelé plusieurs fois proche dans le temps).
+ */
+export async function claimUnnotifiedAnnonces() {
+  if (!pool) throw new Error("Pool non initialisé");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const ventes = await client.query(
+      `UPDATE "Annonce" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
+    );
+    const locations = await client.query(
+      `UPDATE "AnnonceLocation" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
+    );
+    await client.query("COMMIT");
+    return { ventes: ventes.rows, locations: locations.rows };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
   }
 }
 
