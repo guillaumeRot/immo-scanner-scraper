@@ -490,9 +490,24 @@ export async function insertAnnonce(annonce) {
   }
 
   try {
+    // Une agence republie parfois le même bien sous un nouveau lien (constaté sur Bien-ici,
+    // et probablement à l'origine de "nouveautés" suspectes sur Carnot après une purge
+    // partielle par deleteMissingAnnonces) : si un bien avec les mêmes caractéristiques
+    // existe déjà pour cette agence sous un autre lien, on l'insère mais sans redéclencher
+    // de notification (notifie=TRUE d'emblée). Une mise à jour (ON CONFLICT) ne touche
+    // jamais notifie, donc ceci ne s'applique qu'aux vraies nouvelles lignes.
+    // (requête séparée plutôt qu'une sous-requête inline : réutiliser un même paramètre
+    // entre le INSERT et une sous-requête imbriquée fait échouer l'inférence de type de pg
+    // avec "inconsistent types deduced for parameter")
+    const dejaConnuRes = await pool.query(
+      `SELECT 1 FROM "Annonce" WHERE agence = $1 AND ville = $2 AND prix = $3 AND surface = $4 AND pieces = $5 AND lien <> $6 LIMIT 1`,
+      [annonce.agence, annonce.ville, annonce.prix ?? null, annonce.surface ?? null, annonce.pieces ?? null, annonce.lien]
+    );
+    const dejaConnu = dejaConnuRes.rows.length > 0;
+
     const upsertQuery = `
-      INSERT INTO "Annonce" (type, prix, ville, pieces, surface, lien, agence, description, photos, nb_t1, nb_t2, nb_t3, nb_t4, nb_t5, dpe, ges, created_at, date_scraped)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, NOW(), NOW())
+      INSERT INTO "Annonce" (type, prix, ville, pieces, surface, lien, agence, description, photos, nb_t1, nb_t2, nb_t3, nb_t4, nb_t5, dpe, ges, notifie, created_at, date_scraped)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, NOW(), NOW())
       ON CONFLICT (lien)
       DO UPDATE SET
         type = EXCLUDED.type,
@@ -529,7 +544,8 @@ export async function insertAnnonce(annonce) {
       annonce.nb_t4,
       annonce.nb_t5,
       annonce.dpe || null,
-      annonce.ges || null
+      annonce.ges || null,
+      dejaConnu,
     ];
 
     await pool.query(upsertQuery, values);
@@ -559,9 +575,17 @@ export async function insertAnnonceLocation(annonce) {
   if (annonce.ges && !/^[A-G]$/.test(annonce.ges)) annonce.ges = null;
 
   try {
+    // Cf. insertAnnonce : évite de re-notifier un bien déjà connu republié sous un nouveau lien
+    // (requête séparée pour la même raison de typage pg que insertAnnonce).
+    const dejaConnuRes = await pool.query(
+      `SELECT 1 FROM "AnnonceLocation" WHERE agence = $1 AND ville = $2 AND loyer = $3 AND surface = $4 AND pieces = $5 AND lien <> $6 LIMIT 1`,
+      [annonce.agence, annonce.ville, annonce.loyer ?? null, annonce.surface ?? null, annonce.pieces ?? null, annonce.lien]
+    );
+    const dejaConnu = dejaConnuRes.rows.length > 0;
+
     const upsertQuery = `
-      INSERT INTO "AnnonceLocation" (type, loyer, charges, ville, pieces, surface, lien, agence, description, photos, dpe, ges, created_at, date_scraped)
-      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, NOW(), NOW())
+      INSERT INTO "AnnonceLocation" (type, loyer, charges, ville, pieces, surface, lien, agence, description, photos, dpe, ges, notifie, created_at, date_scraped)
+      VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, NOW(), NOW())
       ON CONFLICT (lien)
       DO UPDATE SET
         type = EXCLUDED.type,
@@ -591,6 +615,7 @@ export async function insertAnnonceLocation(annonce) {
       annonce.photos ? JSON.stringify(annonce.photos) : null,
       annonce.dpe || null,
       annonce.ges || null,
+      dejaConnu,
     ];
 
     await pool.query(upsertQuery, values);

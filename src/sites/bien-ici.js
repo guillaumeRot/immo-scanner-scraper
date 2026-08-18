@@ -24,7 +24,10 @@ async function fetchPage(from, zoneIds, size = 100) {
 
 function parseAd(ad) {
   const type = ad.propertyType === "building" ? "immeuble" : "maison";
-  const prix = ad.price || 0;
+  // Programmes neufs à plusieurs lots : ad.price peut être un tableau [min, max] au lieu
+  // d'un nombre — sans ça, pg sérialise le tableau JS en littéral Postgres "{123,NULL}"
+  // et corrompt la colonne (constaté en base : prix = '{"328515",NULL}').
+  const prix = (Array.isArray(ad.price) ? ad.price[0] : ad.price) || 0;
   const ville = ad.city || "";
   const surface = ad.surfaceArea || 0;
   const pieces = ad.roomsQuantity || 0;
@@ -60,7 +63,9 @@ async function fetchLocationPage(from, zoneIds, size = 100) {
 // publication et plafonner à quelques pages par ville suffit à couvrir l'activité récente
 // sans dépasser la limite de durée d'une fonction serverless (chaque zone est interrogée
 // séparément pour que les deux villes soient couvertes équitablement).
-const MAX_PAGES_PAR_VILLE = 5;
+// Plafond cron-job.org (30s, non modifiable) plus strict que celui de Vercel (60s) :
+// à 5 pages/ville la version vente tournait à ~23s, marge trop faible → réduit à 3.
+const MAX_PAGES_PAR_VILLE = 3;
 
 export const bienIciScraper = async () => {
   const villeRows = await getVilleParams("bienici");
@@ -71,6 +76,11 @@ export const bienIciScraper = async () => {
 
   const liensActuels = [];
   const size = 100;
+  // Cf. version location : une même agence republie parfois le même bien sous plusieurs
+  // ids distincts (jusqu'à 13 fois vu en pratique) — on ne garde qu'une occurrence par
+  // empreinte pour éviter des dizaines d'écritures DB inutiles (source du dépassement des
+  // 30s de timeout cron-job.org sur ce scraper).
+  const empreintesVues = new Set();
 
   for (const row of villeRows) {
     const zoneIds = [row.params.zone_id];
@@ -96,7 +106,10 @@ export const bienIciScraper = async () => {
         const lien = `https://www.bienici.com/annonce/${ad.id}`;
         try {
           const data = parseAd(ad);
+          const empreinte = `${data.ville}|${data.prix}|${data.surface}|${data.pieces}|${data.description}`;
+          if (empreintesVues.has(empreinte)) continue;
           if (data.ville && data.prix) {
+            empreintesVues.add(empreinte);
             await insertAnnonce({
               type: data.type,
               prix: data.prix,
