@@ -244,6 +244,9 @@ export const diardLocationScraper = async () => {
     await deleteMissingAnnoncesLocation("Diard", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Diard (location) - Scraping terminé !");
+  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
+  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
+  return { incomplete: scrapeIncomplete };
 };
 
 export const diardScraper = async () => {
@@ -326,4 +329,7 @@ export const diardScraper = async () => {
     await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Diard - Scraping terminé !");
+  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
+  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
+  return { incomplete: scrapeIncomplete };
 };

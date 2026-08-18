@@ -239,6 +239,9 @@ export const boyerLocationScraper = async () => {
     await deleteMissingAnnoncesLocation("Boyer Immobilier", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Boyer (location) - Scraping terminé !");
+  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
+  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
+  return { incomplete: scrapeIncomplete };
 };
 
 export const boyerScraper = async () => {
@@ -321,4 +324,7 @@ export const boyerScraper = async () => {
     await deleteMissingAnnonces("Boyer Immobilier", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Boyer - Scraping terminé !");
+  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
+  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
+  return { incomplete: scrapeIncomplete };
 };

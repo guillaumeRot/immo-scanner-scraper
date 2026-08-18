@@ -100,8 +100,15 @@ app.get('/run-scrapers', async (req, res) => {
     if (scraper) {
       const { fn, displayName } = SCRAPERS[scraper];
       const startTime = Date.now();
-      await fn();
+      const result = await fn();
       await updateScanTable(displayName, startTime);
+      // Certains scrapers (Diard, Boyer) renvoient { incomplete: true } quand ils ont dû
+      // s'arrêter en cours de route (échec persistant, budget de temps dépassé) : le run
+      // s'est terminé sans planter, mais cron-job.org doit quand même voir un échec.
+      if (result?.incomplete) {
+        res.status(500).json({ status: "error", message: `Scraper ${scraper} incomplet (échec persistant), voir la table Erreur.` });
+        return;
+      }
       res.json({ status: "done", message: `Scraper ${scraper} terminé.` });
       return;
     }
