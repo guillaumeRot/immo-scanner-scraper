@@ -21,24 +21,40 @@ const HEADERS = {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
-// Le serveur Diard répond parfois par un 504 après une trentaine de secondes (constaté :
-// une seule fiche en erreur a fait passer un run entier de ~8s à 90s, dépassant la limite
-// de 60s d'une fonction Vercel). Sans timeout explicite, fetch() attend aussi longtemps
-// que le serveur/proxy distant le décide — on borne donc chaque requête à 10s, avec un
-// seul réessai en cas de timeout (une vraie erreur HTTP comme un 500 n'est elle jamais
-// réessayée : ce n'est pas un problème transitoire de réseau, ça remonte tel quel).
+// Le serveur Diard répond parfois par un 502/503/504 ou reste muet une trentaine de
+// secondes (constaté : une seule fiche en erreur a fait passer un run entier de ~8s à
+// 90s, dépassant la limite de 60s d'une fonction Vercel). On borne donc chaque requête
+// à 5s et on réessaie une fois pour les problèmes transitoires — timeout réseau ou
+// 502/503/504 (souci ponctuel de proxy/passerelle côté site, pas un bug qui persiste).
+// Un vrai 500 (ou tout autre code) n'est lui jamais réessayé : ça remonte tel quel.
+const CODES_TRANSITOIRES = new Set([502, 503, 504]);
+const FETCH_TIMEOUT_MS = 5000;
+// Plafond cron-job.org (30s, non modifiable) : même avec des requêtes rapides, plusieurs
+// échecs (timeout + réessai) dans un même run peuvent s'accumuler au-delà de 30s. Ce
+// budget interrompt proprement le scraper avant cette limite plutôt que de laisser
+// cron-job.org le couper en plein milieu. Le check n'a lieu qu'entre deux itérations :
+// une dernière requête déjà lancée peut encore coûter jusqu'à ~12s (timeout + réessai)
+// après que le budget soit dépassé (constaté : 28s avec un budget à 20s) — fixé à 15s
+// pour garder une vraie marge sous les 30s.
+const BUDGET_MS = 15000;
+
 async function fetchOnce(url) {
   const controller = new AbortController();
-  const timeout = setTimeout(() => controller.abort(), 10000);
+  const timeout = setTimeout(() => controller.abort(), FETCH_TIMEOUT_MS);
   try {
     const res = await fetch(url, { headers: HEADERS, signal: controller.signal });
-    if (!res.ok) throw new Error(`HTTP ${res.status} on ${url}`);
+    if (!res.ok) {
+      const httpErr = new Error(`HTTP ${res.status} on ${url}`);
+      if (CODES_TRANSITOIRES.has(res.status)) httpErr.isRetryable = true;
+      throw httpErr;
+    }
     // Le site utilise ISO-8859-1
     const buf = await res.arrayBuffer();
     return new TextDecoder("iso-8859-1").decode(buf);
   } catch (err) {
     if (err.name === "AbortError") {
-      const timeoutErr = new Error(`Timeout (10s) on ${url}`);
+      const timeoutErr = new Error(`Timeout (${FETCH_TIMEOUT_MS / 1000}s) on ${url}`);
+      timeoutErr.isRetryable = true;
       timeoutErr.isTimeout = true;
       throw timeoutErr;
     }
@@ -52,9 +68,10 @@ async function fetchHtml(url) {
   try {
     return await fetchOnce(url);
   } catch (err) {
-    if (!err.isTimeout) throw err; // HTTP 500 etc. : pas de réessai, on relance direct
-    console.warn(`⚠️ Diard - Timeout, réessai unique : ${url}`);
-    return await fetchOnce(url); // 2e et dernière tentative ; si elle timeout aussi, l'erreur remonte
+    if (!err.isRetryable) throw err; // HTTP 500 etc. : pas de réessai, on relance direct
+    console.warn(`⚠️ Diard - ${err.message}, réessai unique...`);
+    await new Promise((r) => setTimeout(r, 2000));
+    return await fetchOnce(url); // 2e et dernière tentative ; si elle échoue aussi, l'erreur remonte
   }
 }
 
@@ -156,24 +173,38 @@ export const diardLocationScraper = async () => {
   }
 
   const liensActuels = [];
+  const scraperStart = Date.now();
+  let scrapeIncomplete = false;
 
+  villeLoop:
   for (const row of villeRows) {
     let currentUrl = BASE_LIST_URL_LOCATION + encodeURIComponent(row.params.C_65);
 
     while (currentUrl) {
+      if (Date.now() - scraperStart > BUDGET_MS) {
+        console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+        scrapeIncomplete = true;
+        break villeLoop;
+      }
       console.log(`🔎 Diard (location) - Page de liste : ${currentUrl}`);
       let links, nextUrl;
       try {
         ({ links, nextUrl } = await scrapeListPage(currentUrl));
       } catch (err) {
-        if (!err.isTimeout) throw err; // erreur HTTP (500...) : on laisse remonter, pas de faux succès
-        console.error(`❌ Diard (location) - Timeout persistant sur la page de liste ${currentUrl}`);
+        if (!err.isRetryable) throw err; // vraie erreur HTTP (500...) : on laisse remonter, pas de faux succès
+        console.error(`❌ Diard (location) - Échec persistant sur la page de liste ${currentUrl}: ${err.message}`);
         await insertErreur("Diard (location)", currentUrl, String(err));
+        scrapeIncomplete = true;
         break; // on passe à la ville suivante plutôt que de planter tout le scraper
       }
       console.log(`📌 Diard (location) - ${links.length} annonces trouvées.`);
 
       for (const url of links) {
+        if (Date.now() - scraperStart > BUDGET_MS) {
+          console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+          scrapeIncomplete = true;
+          break villeLoop;
+        }
         try {
           console.log(`📄 Diard (location) - Page détail : ${url}`);
           const data = await scrapeLocationDetailPage(url);
@@ -207,7 +238,11 @@ export const diardLocationScraper = async () => {
     }
   }
 
-  await deleteMissingAnnoncesLocation("Diard", Array.from(new Set(liensActuels)));
+  if (scrapeIncomplete) {
+    console.warn("⚠️ Diard (location) - Run incomplet : nettoyage des annonces disparues ignoré pour cette exécution.");
+  } else {
+    await deleteMissingAnnoncesLocation("Diard", Array.from(new Set(liensActuels)));
+  }
   console.log("✅ Diard (location) - Scraping terminé !");
 };
 
@@ -219,24 +254,38 @@ export const diardScraper = async () => {
   }
 
   const liensActuels = [];
+  const scraperStart = Date.now();
+  let scrapeIncomplete = false;
 
+  villeLoop:
   for (const row of villeRows) {
   let currentUrl = BASE_LIST_URL + encodeURIComponent(row.params.C_65);
 
   while (currentUrl) {
+    if (Date.now() - scraperStart > BUDGET_MS) {
+      console.warn(`⚠️ Diard - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+      scrapeIncomplete = true;
+      break villeLoop;
+    }
     console.log(`🔎 Diard - Page de liste : ${currentUrl}`);
     let links, nextUrl;
     try {
       ({ links, nextUrl } = await scrapeListPage(currentUrl));
     } catch (err) {
-      if (!err.isTimeout) throw err; // erreur HTTP (500...) : on laisse remonter, pas de faux succès
-      console.error(`❌ Diard - Timeout persistant sur la page de liste ${currentUrl}`);
+      if (!err.isRetryable) throw err; // erreur HTTP (500...) : on laisse remonter, pas de faux succès
+      console.error(`❌ Diard - Échec persistant sur la page de liste ${currentUrl}: ${err.message}`);
       await insertErreur("Diard", currentUrl, String(err));
+      scrapeIncomplete = true;
       break; // on passe à la ville suivante plutôt que de planter tout le scraper
     }
     console.log(`📌 Diard - ${links.length} annonces trouvées.`);
 
     for (const url of links) {
+      if (Date.now() - scraperStart > BUDGET_MS) {
+        console.warn(`⚠️ Diard - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+        scrapeIncomplete = true;
+        break villeLoop;
+      }
       try {
         console.log(`📄 Diard - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);
@@ -271,6 +320,10 @@ export const diardScraper = async () => {
   }
   } // fin boucle villes
 
-  await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
+  if (scrapeIncomplete) {
+    console.warn("⚠️ Diard - Run incomplet : nettoyage des annonces disparues ignoré pour cette exécution.");
+  } else {
+    await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
+  }
   console.log("✅ Diard - Scraping terminé !");
 };
