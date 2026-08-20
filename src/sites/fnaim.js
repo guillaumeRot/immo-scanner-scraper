@@ -44,6 +44,27 @@ function getCarac($, label) {
   return val;
 }
 
+// FNAIM est en cours de migration de template (constaté : certaines fiches ont encore
+// div[itemprop="address"], d'autres non — celles sans ce bloc font échouer l'extraction
+// avec "ville manquante" alors que le prix, lui, reste extractible). Le fil d'Ariane
+// structuré (JSON-LD BreadcrumbList, dernier élément) est présent sur les deux versions
+// et donne un résultat identique — plus fiable que de dépendre du markup itemprop.
+function extractVille($) {
+  let ville = "";
+  $('script[type="application/ld+json"]').each((_, el) => {
+    try {
+      const data = JSON.parse($(el).text());
+      if (data["@type"] === "BreadcrumbList" && Array.isArray(data.itemListElement)) {
+        const last = data.itemListElement[data.itemListElement.length - 1];
+        if (last?.name) ville = last.name.replace(/\s*\(\d{5}\)\s*$/, "").trim();
+      }
+    } catch (_) {
+      // JSON-LD malformé sur ce bloc : on ignore, un autre bloc peut contenir le BreadcrumbList
+    }
+  });
+  return ville;
+}
+
 async function scrapeDetailPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
@@ -54,8 +75,7 @@ async function scrapeDetailPage(url) {
 
   const prix = parseInt($('.annonce_price span[itemprop="price"]').text().replace(/\s+/g, "")) || 0;
 
-  const ville = $('div[itemprop="address"] span').first().text().trim()
-    .replace(/\s*\([^)]*\)/g, "").trim();
+  const ville = extractVille($);
 
   const surface = parseFloat(getCarac($, "Surface habitable")) || 0;
   const chambres = parseInt(getCarac($, "Nombre de chambres")) || 0;
