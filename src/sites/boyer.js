@@ -178,6 +178,7 @@ export const boyerLocationScraper = async () => {
     while (currentUrl) {
       if (Date.now() - scraperStart > BUDGET_MS) {
         console.warn(`⚠️ Boyer (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+        await insertErreur("Boyer Immobilier (location)", currentUrl, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
         scrapeIncomplete = true;
         break villeLoop;
       }
@@ -197,6 +198,7 @@ export const boyerLocationScraper = async () => {
       for (const url of links) {
         if (Date.now() - scraperStart > BUDGET_MS) {
           console.warn(`⚠️ Boyer (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+          await insertErreur("Boyer Immobilier (location)", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
           scrapeIncomplete = true;
           break villeLoop;
         }
@@ -239,9 +241,6 @@ export const boyerLocationScraper = async () => {
     await deleteMissingAnnoncesLocation("Boyer Immobilier", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Boyer (location) - Scraping terminé !");
-  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
-  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
-  return { incomplete: scrapeIncomplete };
 };
 
 export const boyerScraper = async () => {
@@ -262,6 +261,7 @@ export const boyerScraper = async () => {
   while (currentUrl) {
     if (Date.now() - scraperStart > BUDGET_MS) {
       console.warn(`⚠️ Boyer - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+      await insertErreur("Boyer Immobilier", currentUrl, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
       scrapeIncomplete = true;
       break villeLoop;
     }
@@ -281,6 +281,7 @@ export const boyerScraper = async () => {
     for (const url of links) {
       if (Date.now() - scraperStart > BUDGET_MS) {
         console.warn(`⚠️ Boyer - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+        await insertErreur("Boyer Immobilier", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
         scrapeIncomplete = true;
         break villeLoop;
       }
@@ -324,7 +325,4 @@ export const boyerScraper = async () => {
     await deleteMissingAnnonces("Boyer Immobilier", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Boyer - Scraping terminé !");
-  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
-  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
-  return { incomplete: scrapeIncomplete };
 };

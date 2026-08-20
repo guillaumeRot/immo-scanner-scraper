@@ -81,3 +81,43 @@ export async function sendNewAnnoncesEmail(ventes, locations) {
 
   console.log(`✅ Email envoyé (${ventes.length} vente(s), ${locations.length} location(s)) à ${dest}`);
 }
+
+function erreurRowHtml(e) {
+  const date = new Date(e.date_erreur).toLocaleString("fr-FR", { timeZone: "Europe/Paris" });
+  return `
+    <tr>
+      <td style="padding:10px 0;border-bottom:1px solid #e5e5e5;font-size:13px;">
+        <div style="font-weight:600;color:#111;">${e.scraper} <span style="font-weight:400;color:#888;">— ${date}</span></div>
+        <div style="color:#b91c1c;margin:2px 0;">${e.message}</div>
+        <div style="color:#888;word-break:break-all;">${e.url}</div>
+      </td>
+    </tr>`;
+}
+
+function buildErrorReportHtml(erreurs) {
+  return `
+    <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:16px;">
+      <h1 style="font-size:18px;color:#111;">⚠️ ${erreurs.length} erreur${erreurs.length > 1 ? "s" : ""} scraper — Vitré / Châteaugiron</h1>
+      <table width="100%" cellpadding="0" cellspacing="0">${erreurs.map(erreurRowHtml).join("")}</table>
+    </div>`;
+}
+
+/**
+ * Envoie un email récapitulatif des erreurs de scraping pas encore notifiées.
+ * Ne fait rien (et ne lève pas d'erreur) si le lot est vide.
+ */
+export async function sendErrorReportEmail(erreurs) {
+  if (erreurs.length === 0) return;
+
+  const dest = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER;
+  const sujet = `⚠️ ${erreurs.length} erreur${erreurs.length > 1 ? "s" : ""} scraper — Vitré / Châteaugiron`;
+
+  await getTransporter().sendMail({
+    from: `"Immo Scanner" <${process.env.GMAIL_USER}>`,
+    to: dest,
+    subject: sujet,
+    html: buildErrorReportHtml(erreurs),
+  });
+
+  console.log(`✅ Email d'erreurs envoyé (${erreurs.length} erreur(s)) à ${dest}`);
+}

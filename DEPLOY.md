@@ -11,6 +11,14 @@
   retirés (plus utilisés) — build Vercel plus rapide, pas de téléchargement de Chromium.
 - **Auth** : `/run-scrapers` est protégé par un secret partagé (header `x-cron-secret` ou
   `?secret=`). Sans `CRON_SECRET` défini, la vérification est ignorée (pratique en local).
+- **Scrapers asynchrones** : `/run-scrapers?scraper=X` répond immédiatement (`HTTP 202`,
+  quelques millisecondes) sans attendre la fin du scraping, qui continue en arrière-plan
+  via `waitUntil()` (`@vercel/functions`) jusqu'à `maxDuration` (60s). Ça découple la durée
+  du scraping du timeout de cron-job.org (30s, non modifiable) — un scraper lent ou en
+  échec ne fait plus jamais planter/timeout l'appel cron. Conséquence : le code HTTP de cet
+  appel ne reflète plus la réussite du scraping (toujours 202 si l'auth et le nom du
+  scraper sont valides) — la détection d'échec se fait désormais via `/send-error-report`
+  (voir section 2ter), pas via le statut de cette tâche cron-job.org.
 - **`api/index.js` + `vercel.json`** : point d'entrée serverless, toutes les routes sont
   réécrites vers cette fonction, `maxDuration: 60` (plafond du plan Hobby).
 - **Bugs corrigés en cours de route** (remontés en testant chaque scraper contre la limite
@@ -123,6 +131,24 @@ etc.) ne remet pas `notifie` à `false` — seules les vraies nouveautés décle
 
 ⚠️ Si tu changes la fréquence des scrapers plus tard, pense à réajuster l'horaire de cette
 tâche pour qu'elle reste décalée après le nouveau créneau.
+
+## 2ter. Rapport des erreurs de scraping
+
+Les scrapers étant asynchrones (section précédente), le code HTTP de `/run-scrapers` ne
+permet plus de savoir si un scraping a réussi ou échoué. Crée **une tâche cron-job.org
+supplémentaire** pour ça :
+
+- **URL** : `https://<ton-domaine-vercel>.vercel.app/send-error-report?secret=<CRON_SECRET>`
+- **Méthode** : GET
+- **Planification** : décalée après le créneau de scraping, comme `/send-notifications`
+  (ex: 4h20/10h20/16h20 UTC si les scrapers tournent à 4h/10h/16h UTC) — le temps que
+  chaque scraping déclenché en arrière-plan ait fini avant l'envoi du récapitulatif.
+
+Fonctionnement : identique à `/send-notifications` mais sur la table `Erreur` — chaque
+nouvelle erreur (page en échec, run incomplet après échec persistant/budget de temps
+dépassé) démarre avec `notifie = false`. Cet endpoint réclame atomiquement toutes les
+lignes `notifie = false`, envoie **un seul email récapitulatif** s'il y en a, puis les
+marque `notifie = true`.
 
 ## 3. Nettoyage à décider
 

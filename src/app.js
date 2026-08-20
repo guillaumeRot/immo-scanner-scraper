@@ -1,7 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
-import { initDb, updateScanTable, claimUnnotifiedAnnonces } from './db.js';
-import { sendNewAnnoncesEmail } from './email.js';
+import { waitUntil } from '@vercel/functions';
+import { initDb, updateScanTable, claimUnnotifiedAnnonces, claimUnnotifiedErreurs, insertErreur } from './db.js';
+import { sendNewAnnoncesEmail, sendErrorReportEmail } from './email.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper, kermarrecLocationScraper } from './sites/kermarrec.js';
 import { eraScraper, eraLocationScraper } from './sites/era.js';
@@ -100,16 +101,32 @@ app.get('/run-scrapers', async (req, res) => {
     if (scraper) {
       const { fn, displayName } = SCRAPERS[scraper];
       const startTime = Date.now();
-      const result = await fn();
-      await updateScanTable(displayName, startTime);
-      // Certains scrapers (Diard, Boyer) renvoient { incomplete: true } quand ils ont dû
-      // s'arrêter en cours de route (échec persistant, budget de temps dépassé) : le run
-      // s'est terminé sans planter, mais cron-job.org doit quand même voir un échec.
-      if (result?.incomplete) {
-        res.status(500).json({ status: "error", message: `Scraper ${scraper} incomplet (échec persistant), voir la table Erreur.` });
-        return;
+
+      // Exécution asynchrone : on répond tout de suite à cron-job.org (qui a un plafond
+      // de 30s, plus strict que les 60s de maxDuration Vercel) et le scraping continue en
+      // arrière-plan. waitUntil() maintient la fonction serverless vivante jusqu'à la fin
+      // du scraping (borné par maxDuration) même après l'envoi de la réponse HTTP. La
+      // détection d'échec ne passe plus par le code HTTP de cet appel (déjà envoyé avant
+      // la fin du scraping) mais par /send-error-report, qui lit la table Erreur.
+      const runInBackground = (async () => {
+        try {
+          await fn();
+          await updateScanTable(displayName, startTime);
+        } catch (err) {
+          console.error(`❌ Erreur (async) scraper ${displayName}:`, err);
+          try {
+            await insertErreur(displayName, "RUN", String(err));
+          } catch (_) {
+            // rien à faire de plus si même l'enregistrement de l'erreur échoue
+          }
+        }
+      })();
+
+      if (process.env.VERCEL) {
+        waitUntil(runInBackground);
       }
-      res.json({ status: "done", message: `Scraper ${scraper} terminé.` });
+
+      res.status(202).json({ status: "started", message: `Scraper ${scraper} démarré (traitement asynchrone).` });
       return;
     }
 
@@ -150,6 +167,28 @@ app.get('/send-notifications', async (req, res) => {
     });
   } catch (e) {
     console.error("❌ Erreur dans /send-notifications:", e);
+    res.status(500).json({ status: "error", message: e.message });
+  }
+});
+
+// Déclenché par un cron-job.org séparé : les scrapers étant désormais asynchrones
+// (réponse immédiate à /run-scrapers, cf. plus haut), c'est ce endpoint — et non plus le
+// code HTTP de /run-scrapers — qui remonte les échecs de scraping. Regarde s'il y a des
+// erreurs pas encore notifiées dans la table Erreur et, si oui, envoie un seul email
+// récapitulatif. Prévoir un décalage après le créneau de scraping, comme /send-notifications.
+app.get('/send-error-report', async (req, res) => {
+  if (!checkAuth(req, res)) return;
+
+  try {
+    await initDb();
+    const erreurs = await claimUnnotifiedErreurs();
+    await sendErrorReportEmail(erreurs);
+    res.json({
+      status: "done",
+      message: `${erreurs.length} erreur(s) notifiée(s).`,
+    });
+  } catch (e) {
+    console.error("❌ Erreur dans /send-error-report:", e);
     res.status(500).json({ status: "error", message: e.message });
   }
 });

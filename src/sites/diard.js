@@ -183,6 +183,7 @@ export const diardLocationScraper = async () => {
     while (currentUrl) {
       if (Date.now() - scraperStart > BUDGET_MS) {
         console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+        await insertErreur("Diard (location)", currentUrl, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
         scrapeIncomplete = true;
         break villeLoop;
       }
@@ -202,6 +203,7 @@ export const diardLocationScraper = async () => {
       for (const url of links) {
         if (Date.now() - scraperStart > BUDGET_MS) {
           console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+          await insertErreur("Diard (location)", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
           scrapeIncomplete = true;
           break villeLoop;
         }
@@ -244,9 +246,6 @@ export const diardLocationScraper = async () => {
     await deleteMissingAnnoncesLocation("Diard", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Diard (location) - Scraping terminé !");
-  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
-  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
-  return { incomplete: scrapeIncomplete };
 };
 
 export const diardScraper = async () => {
@@ -267,6 +266,7 @@ export const diardScraper = async () => {
   while (currentUrl) {
     if (Date.now() - scraperStart > BUDGET_MS) {
       console.warn(`⚠️ Diard - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+      await insertErreur("Diard", currentUrl, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
       scrapeIncomplete = true;
       break villeLoop;
     }
@@ -286,6 +286,7 @@ export const diardScraper = async () => {
     for (const url of links) {
       if (Date.now() - scraperStart > BUDGET_MS) {
         console.warn(`⚠️ Diard - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+        await insertErreur("Diard", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
         scrapeIncomplete = true;
         break villeLoop;
       }
@@ -329,7 +330,4 @@ export const diardScraper = async () => {
     await deleteMissingAnnonces("Diard", Array.from(new Set(liensActuels)));
   }
   console.log("✅ Diard - Scraping terminé !");
-  // Signale l'échec à /run-scrapers (→ HTTP 500) pour que cron-job.org le détecte,
-  // même si le run s'est terminé "proprement" (erreurs déjà loguées dans la table Erreur).
-  return { incomplete: scrapeIncomplete };
 };

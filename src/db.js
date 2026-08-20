@@ -84,11 +84,13 @@ async function ensureTablesExists() {
       scraper VARCHAR(100) NOT NULL,
       url TEXT NOT NULL,
       message TEXT NOT NULL,
+      notifie BOOLEAN DEFAULT FALSE,
       date_erreur TIMESTAMP WITH TIME ZONE DEFAULT NOW()
     );
 
     CREATE INDEX IF NOT EXISTS idx_erreur_scraper ON "Erreur"(scraper);
     CREATE INDEX IF NOT EXISTS idx_erreur_date ON "Erreur"(date_erreur);
+    ALTER TABLE "Erreur" ADD COLUMN IF NOT EXISTS notifie BOOLEAN DEFAULT FALSE;
   `;
 
   await pool.query(createTableQuery);
@@ -745,6 +747,31 @@ export async function claimUnnotifiedAnnonces() {
     );
     await client.query("COMMIT");
     return { ventes: ventes.rows, locations: locations.rows };
+  } catch (err) {
+    await client.query("ROLLBACK");
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
+/**
+ * Réclame atomiquement toutes les erreurs pas encore notifiées : les marque
+ * notifie=true dans la même transaction que la lecture, pour qu'un appel concurrent
+ * ne puisse jamais récupérer les mêmes lignes deux fois (même logique que
+ * claimUnnotifiedAnnonces, cf. /send-error-report).
+ */
+export async function claimUnnotifiedErreurs() {
+  if (!pool) throw new Error("Pool non initialisé");
+
+  const client = await pool.connect();
+  try {
+    await client.query("BEGIN");
+    const erreurs = await client.query(
+      `UPDATE "Erreur" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
+    );
+    await client.query("COMMIT");
+    return erreurs.rows.sort((a, b) => new Date(a.date_erreur) - new Date(b.date_erreur));
   } catch (err) {
     await client.query("ROLLBACK");
     throw err;

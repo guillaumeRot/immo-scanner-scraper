@@ -12,6 +12,7 @@
   "license": "ISC",
   "description": "",
   "dependencies": {
+    "@vercel/functions": "^3.9.3",
     "cheerio": "^1.2.0",
     "dotenv": "^17.2.2",
     "express": "^4.21.2",
