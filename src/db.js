@@ -176,7 +176,9 @@ async function seedVilles() {
       ('Châteaugiron', '35410'),
       ('Brécé', '35530'),
       ('Servon-sur-Vilaine', '35530'),
-      ('Noyal-sur-Vilaine', '35530')
+      ('Noyal-sur-Vilaine', '35530'),
+      ('Acigné', '35690'),
+      ('Châteaubourg', '35220')
     ON CONFLICT (nom) DO NOTHING
   `);
 
@@ -185,6 +187,8 @@ async function seedVilles() {
   const brece            = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Brécé'`)).rows[0].id;
   const servonSurVilaine = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Servon-sur-Vilaine'`)).rows[0].id;
   const noyalSurVilaine  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Noyal-sur-Vilaine'`)).rows[0].id;
+  const acigne        = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Acigné'`)).rows[0].id;
+  const chateaubourg  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaubourg'`)).rows[0].id;
 
   const entries = [
     [vitre,        "acheter-louer",       { loc: "vitre",             cityZip: "35500" }],
@@ -209,13 +213,16 @@ async function seedVilles() {
     [brece,            "laforet",             { slug: "brece-35530" }],
     [servonSurVilaine, "laforet",             { slug: "servon-sur-vilaine-35530" }],
     [noyalSurVilaine,  "laforet",             { slug: "noyal-sur-vilaine-35530" }],
+    [acigne,           "laforet",             { slug: "acigne-35690" }],
+    [chateaubourg,     "laforet",             { slug: "chateaubourg-35220" }],
     [vitre,        "square-habitat",      { region: "bretagne/ille-et-vilaine", slug: "vitre-35500", villeSlug: "vitre" }],
     [chateaugiron, "square-habitat",      { region: "bretagne/ille-et-vilaine", slug: "chateaugiron-35410", villeSlug: "chateaugiron" }],
     [vitre,        "century",             { segment: "cpv-35500_vitre",    cible: true }],
     [chateaugiron, "century",             { segment: "v-chateaugiron",     cible: false }],
     [servonSurVilaine, "century",             { segment: "v-servon+sur+vilaine", cible: false }],
     [noyalSurVilaine,  "century",             { segment: "v-noyal+sur+vilaine",  cible: false }],
-    // Brécé n'a pas de page dédiée sur century21.fr (testé : HTTP 410) — pas de config possible.
+    [acigne,           "century",             { segment: "v-acigne",             cible: false }],
+    // Brécé et Châteaubourg n'ont pas de page dédiée sur century21.fr (testé : HTTP 410) — pas de config possible.
     [vitre,        "era",                 { era_id: "Vitre-c27606" }],
     [chateaugiron, "era",                 { era_id: "Chateaugiron-c15629" }],
     [brece,            "era",                 { era_id: "Brece-c14404" }],
@@ -243,6 +250,27 @@ async function seedVilles() {
     [brece,            "la-francaise-immobiliere", { zone_id: "14349" }],
     [servonSurVilaine, "la-francaise-immobiliere", { zone_id: "6236" }],
     [noyalSurVilaine,  "la-francaise-immobiliere", { zone_id: "6235" }],
+    [vitre,        "efficity",            { slug: "vitre_35" }],
+    [chateaugiron, "efficity",            { slug: "chateaugiron_35" }],
+    [brece,            "efficity",            { slug: "brece_35" }],
+    [servonSurVilaine, "efficity",            { slug: "servon-sur-vilaine_35" }],
+    [noyalSurVilaine,  "efficity",            { slug: "noyal-sur-vilaine_35" }],
+    [acigne,           "efficity",            { slug: "acigne_35" }],
+    [chateaubourg,     "efficity",            { slug: "chateaubourg_35" }],
+    [vitre,        "iad-france",          { slug: "vitre-35500" }],
+    [chateaugiron, "iad-france",          { slug: "chateaugiron-35410" }],
+    [brece,            "iad-france",          { slug: "brece-35530" }],
+    [servonSurVilaine, "iad-france",          { slug: "servon-sur-vilaine-35530" }],
+    [noyalSurVilaine,  "iad-france",          { slug: "noyal-sur-vilaine-35530" }],
+    [acigne,           "iad-france",          { slug: "acigne-35690" }],
+    [chateaubourg,     "iad-france",          { slug: "chateaubourg-35220" }],
+    [vitre,        "alternative-immobilier", { slug: "vitre-35500" }],
+    [chateaugiron, "alternative-immobilier", { slug: "chateaugiron-35410" }],
+    [brece,            "alternative-immobilier", { slug: "brece-35530" }],
+    [servonSurVilaine, "alternative-immobilier", { slug: "servon-sur-vilaine-35530" }],
+    [noyalSurVilaine,  "alternative-immobilier", { slug: "noyal-sur-vilaine-35530" }],
+    [acigne,           "alternative-immobilier", { slug: "acigne-35690" }],
+    [chateaubourg,     "alternative-immobilier", { slug: "chateaubourg-35220" }],
     [vitre,        "ajp-immobilier",      { slug: "vitre-35" }],
     [chateaugiron, "ajp-immobilier",      { slug: "chateaugiron-35" }],
     [brece,            "ajp-immobilier",      { slug: "brece-35" }],
@@ -253,6 +281,8 @@ async function seedVilles() {
     [brece,            "cornier-immobilier",  { slug: "brece-35530" }],
     [servonSurVilaine, "cornier-immobilier",  { slug: "servon-sur-vilaine-35530" }],
     [noyalSurVilaine,  "cornier-immobilier",  { slug: "noyal-sur-vilaine-35530" }],
+    [acigne,           "cornier-immobilier",  { slug: "acigne-35690" }],
+    [chateaubourg,     "cornier-immobilier",  { slug: "chateaubourg-35220" }],
     [vitre,        "nestenn",             { slug: "vitre-35500" }],
     [chateaugiron, "nestenn",             { slug: "chateaugiron-35410" }],
     [brece,            "nestenn",             { slug: "brece-35530" }],
@@ -263,6 +293,8 @@ async function seedVilles() {
     [brece,            "kermarrec",           { slug: "brece-35530",              nom: "brece" }],
     [servonSurVilaine, "kermarrec",           { slug: "servon-sur-vilaine-35530", nom: "servon-sur-vilaine" }],
     [noyalSurVilaine,  "kermarrec",           { slug: "noyal-sur-vilaine-35530",  nom: "noyal-sur-vilaine" }],
+    [acigne,           "kermarrec",           { slug: "acigne-35690",             nom: "acigne" }],
+    [chateaubourg,     "kermarrec",           { slug: "chateaubourg-35220",       nom: "chateaubourg" }],
     [vitre,        "logic-immo",          { location_code: "AD08FR14276" }],
     [chateaugiron, "logic-immo",          { location_code: "AD08FR13990" }],
     [vitre,        "notaires-bretons",    { slug: "vitre-35500" }],
@@ -319,6 +351,14 @@ export const VILLES = {
   NOYAL_SUR_VILAINE: {
     nom: 'Noyal-sur-Vilaine',
     variantes: ['noyal-sur-vilaine', 'Noyal-sur-Vilaine', 'NOYAL-SUR-VILAINE', 'noyal sur vilaine', 'NOYAL SUR VILAINE']
+  },
+  ACIGNE: {
+    nom: 'Acigné',
+    variantes: ['acigne', 'Acigne', 'ACIGNE', 'acigné', 'Acigné', 'ACIGNÉ']
+  },
+  CHATEAUBOURG: {
+    nom: 'Châteaubourg',
+    variantes: ['chateaubourg', 'Chateaubourg', 'CHATEAUBOURG', 'châteaubourg', 'Châteaubourg', 'CHÂTEAUBOURG']
   }
 };
 

@@ -24,6 +24,9 @@ import { laFrancaiseImmobiliereScraper } from './sites/la-francaise-immobiliere.
 import { nestennScraper } from './sites/nestenn.js';
 import { cornierImmobilierScraper } from './sites/cornier-immobilier.js';
 import { ajpImmobilierScraper } from './sites/ajp-immobilier.js';
+import { alternativeImmobilierScraper } from './sites/alternative-immobilier.js';
+import { iadFranceScraper } from './sites/iad-france.js';
+import { efficityScraper } from './sites/efficity.js';
 
 // Figaro Immobilier, Logic-immo et Ouest-France Immo sont désactivés : ils nécessitent
 // Playwright (protections anti-bot Cloudflare/DataDome/challenge maison), incompatible
@@ -56,6 +59,9 @@ const SCRAPERS = {
   "nestenn": { fn: nestennScraper, displayName: "Nestenn" },
   "cornier-immobilier": { fn: cornierImmobilierScraper, displayName: "Cornier Immobilier" },
   "ajp-immobilier": { fn: ajpImmobilierScraper, displayName: "AJP Immobilier" },
+  "alternative-immobilier": { fn: alternativeImmobilierScraper, displayName: "Alternative Immobilier" },
+  "iad-france": { fn: iadFranceScraper, displayName: "iad France" },
+  "efficity": { fn: efficityScraper, displayName: "Efficity" },
 
   // Location (appartements) — mêmes agences, quand elles proposent de la location.
   // Century 21, Immobilier Notaires, Immonot, FNAIM et Penn n'ont pas de recherche
