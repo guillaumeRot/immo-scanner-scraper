@@ -121,7 +121,9 @@ async function scrapeLocationDetailPage(url) {
 }
 
 export const kermarrecLocationScraper = async () => {
-  const villeRows = await getVilleParams("kermarrec");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("kermarrec")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ Kermarrec (location) - Aucune ville configurée en base");
     return;

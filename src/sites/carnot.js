@@ -78,7 +78,9 @@ async function scrapeDetailPage(url) {
 // Même template pour vente et location (prix affiché "450€ par mois" en location, le
 // parsing numérique générique de scrapeDetailPage reste valable).
 export const carnotLocationScraper = async () => {
-  const villeRows = await getVilleParams("carnot");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("carnot")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ Carnot (location) - Aucune ville configurée en base");
     return;

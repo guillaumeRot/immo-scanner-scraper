@@ -61,7 +61,9 @@ async function scrapeDetailPage(url) {
 // Même template pour vente et location (prix affiché "805 € / mois" en location, le
 // parsing numérique générique de scrapeDetailPage reste valable).
 export const notairesBretonsLocationScraper = async () => {
-  const villeRows = await getVilleParams("notaires-bretons");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("notaires-bretons")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ Notaires Bretons (location) - Aucune ville configurée en base");
     return;

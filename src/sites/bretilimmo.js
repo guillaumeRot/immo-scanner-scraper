@@ -85,7 +85,9 @@ async function scrapeDetailPage(url) {
 }
 
 export const bretilimmoLocationScraper = async () => {
-  const villeRows = await getVilleParams("bretilimmo");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("bretilimmo")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ Bretil'Immo (location) - Aucune ville configurée en base");
     return;

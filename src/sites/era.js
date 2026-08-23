@@ -78,7 +78,9 @@ async function scrapeDetailPage(url) {
 // Même structure ng-state pour la vente et la location : val.prix contient le loyer
 // mensuel quand la page est sous /louer/, pas besoin d'un scrapeDetailPage séparé.
 export const eraLocationScraper = async () => {
-  const villeRows = await getVilleParams("era");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("era")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ ERA (location) - Aucune ville configurée en base");
     return;

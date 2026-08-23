@@ -20,6 +20,10 @@ import { bienIciScraper, bienIciLocationScraper } from './sites/bien-ici.js';
 import { fnaimScraper } from './sites/fnaim.js';
 import { laforetScraper } from './sites/laforet.js';
 import { squareHabitatScraper } from './sites/square-habitat.js';
+import { laFrancaiseImmobiliereScraper } from './sites/la-francaise-immobiliere.js';
+import { nestennScraper } from './sites/nestenn.js';
+import { cornierImmobilierScraper } from './sites/cornier-immobilier.js';
+import { ajpImmobilierScraper } from './sites/ajp-immobilier.js';
 
 // Figaro Immobilier, Logic-immo et Ouest-France Immo sont désactivés : ils nécessitent
 // Playwright (protections anti-bot Cloudflare/DataDome/challenge maison), incompatible
@@ -48,6 +52,10 @@ const SCRAPERS = {
   "fnaim": { fn: fnaimScraper, displayName: "FNAIM" },
   "laforet": { fn: laforetScraper, displayName: "Laforêt" },
   "square-habitat": { fn: squareHabitatScraper, displayName: "Square Habitat" },
+  "la-francaise-immobiliere": { fn: laFrancaiseImmobiliereScraper, displayName: "La Française Immobilière" },
+  "nestenn": { fn: nestennScraper, displayName: "Nestenn" },
+  "cornier-immobilier": { fn: cornierImmobilierScraper, displayName: "Cornier Immobilier" },
+  "ajp-immobilier": { fn: ajpImmobilierScraper, displayName: "AJP Immobilier" },
 
   // Location (appartements) — mêmes agences, quand elles proposent de la location.
   // Century 21, Immobilier Notaires, Immonot, FNAIM et Penn n'ont pas de recherche

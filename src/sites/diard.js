@@ -170,7 +170,9 @@ async function scrapeLocationDetailPage(url) {
 }
 
 export const diardLocationScraper = async () => {
-  const villeRows = await getVilleParams("diard");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("diard")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ Diard (location) - Aucune ville configurée en base");
     return;

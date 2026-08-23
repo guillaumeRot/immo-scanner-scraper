@@ -167,7 +167,9 @@ async function scrapeLocationDetailPage(url) {
 }
 
 export const boyerLocationScraper = async () => {
-  const villeRows = await getVilleParams("boyer");
+  // Recherches de location volontairement limitées à Vitré (pas les autres villes
+  // couvertes côté vente).
+  const villeRows = (await getVilleParams("boyer")).filter((r) => r.nom === "Vitré");
   if (!villeRows.length) {
     console.warn("⚠️ Boyer (location) - Aucune ville configurée en base");
     return;
