@@ -21,22 +21,26 @@ const HEADERS = {
     "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 };
 
-// Le serveur Diard répond parfois par un 502/503/504 ou reste muet une trentaine de
-// secondes (constaté : une seule fiche en erreur a fait passer un run entier de ~8s à
-// 90s, dépassant la limite de 60s d'une fonction Vercel). On borne donc chaque requête
-// à 5s et on réessaie une fois pour les problèmes transitoires — timeout réseau ou
-// 502/503/504 (souci ponctuel de proxy/passerelle côté site, pas un bug qui persiste).
-// Un vrai 500 (ou tout autre code) n'est lui jamais réessayé : ça remonte tel quel.
+// Le serveur Diard répond parfois par un 502/503/504 ou reste muet plusieurs secondes.
+// On borne donc chaque requête et on réessaie une fois pour les problèmes transitoires —
+// timeout réseau ou 502/503/504 (souci ponctuel de proxy/passerelle côté site, pas un bug
+// qui persiste). Un vrai 500 (ou tout autre code) n'est lui jamais réessayé : ça remonte
+// tel quel.
 const CODES_TRANSITOIRES = new Set([502, 503, 504]);
-const FETCH_TIMEOUT_MS = 5000;
-// Plafond cron-job.org (30s, non modifiable) : même avec des requêtes rapides, plusieurs
-// échecs (timeout + réessai) dans un même run peuvent s'accumuler au-delà de 30s. Ce
-// budget interrompt proprement le scraper avant cette limite plutôt que de laisser
-// cron-job.org le couper en plein milieu. Le check n'a lieu qu'entre deux itérations :
-// une dernière requête déjà lancée peut encore coûter jusqu'à ~12s (timeout + réessai)
-// après que le budget soit dépassé (constaté : 28s avec un budget à 20s) — fixé à 15s
-// pour garder une vraie marge sous les 30s.
-const BUDGET_MS = 15000;
+// Les scrapers étant désormais asynchrones (réponse immédiate à /run-scrapers, le
+// scraping continue en arrière-plan via waitUntil), ce n'est plus le plafond de 30s de
+// cron-job.org qui contraint ces valeurs mais le maxDuration Vercel (60s). Un timeout à
+// 5s était trop agressif : beaucoup d'échecs "timeout" étaient juste des pages un peu
+// lentes, pas un site en panne (constaté : sur Diard (location), le budget à 15s faisait
+// échouer ~47% des runs sur "budget dépassé" avant même d'avoir traité les annonces).
+const FETCH_TIMEOUT_MS = 10000;
+// Budget de temps global par run : interrompt proprement le scraper avant le maxDuration
+// Vercel plutôt que de le laisser se faire tuer en plein milieu. Le check n'a lieu qu'entre
+// deux itérations : une dernière requête déjà lancée peut encore coûter jusqu'à ~22s
+// (timeout + réessai) après que le budget soit dépassé — 30s laisse encore ~8s de marge
+// sous les 60s de maxDuration pour ce cas, tout en couvrant largement plus de travail
+// qu'avant (2 villes seulement pour ce projet).
+const BUDGET_MS = 30000;
 
 async function fetchOnce(url) {
   const controller = new AbortController();

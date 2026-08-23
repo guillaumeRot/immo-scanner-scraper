@@ -11,6 +11,10 @@ async function fetchPage(from, zoneIds, size = 100) {
     size, from,
     filterType: "buy",
     propertyType: ["house", "building"],
+    // Exclut les programmes neufs (constructeurs) : propertyType peut valoir "programme"
+    // même en filtrant sur house/building, et l'essentiel de ces annonces a de toute façon
+    // status.onTheMarket=false — mais pas 100% d'entre elles, d'où ce filtre explicite.
+    newProperty: false,
     maxPrice: 400000,
     zoneIdsByTypes: { zoneIds },
     sortBy: "publicationDate",
@@ -47,6 +51,7 @@ async function fetchLocationPage(from, zoneIds, size = 100) {
     size, from,
     filterType: "rent",
     propertyType: ["flat"],
+    newProperty: false,
     zoneIdsByTypes: { zoneIds },
     sortBy: "publicationDate",
     sortOrder: "desc",
@@ -81,6 +86,7 @@ export const bienIciScraper = async () => {
   // empreinte pour éviter des dizaines d'écritures DB inutiles (source du dépassement des
   // 30s de timeout cron-job.org sur ce scraper).
   const empreintesVues = new Set();
+  let horsMarcheIgnorees = 0;
 
   for (const row of villeRows) {
     const zoneIds = [row.params.zone_id];
@@ -103,6 +109,16 @@ export const bienIciScraper = async () => {
       console.log(`📌 Bien-ici - ${row.nom} : ${from + ads.length}/${total} annonces récupérées`);
 
       for (const ad of ads) {
+        // Même constat que la version location (cf. bienIciLocationScraper) : l'index
+        // vente contient énormément d'annonces retirées (status.onTheMarket=false et
+        // publicationDate à l'epoch Unix 1970-01-01) — constaté après l'ajout de Brécé/
+        // Servon/Noyal (264 et 259 annonces "actives" pour des communes de ~3500-5400
+        // habitants, largement au-dessus de ce qu'un marché réel peut supporter). On ne
+        // garde que les annonces explicitement encore sur le marché.
+        if (ad.status?.onTheMarket !== true) {
+          horsMarcheIgnorees++;
+          continue;
+        }
         const lien = `https://www.bienici.com/annonce/${ad.id}`;
         try {
           const data = parseAd(ad);
@@ -141,6 +157,7 @@ export const bienIciScraper = async () => {
     }
   }
 
+  console.log(`ℹ️ Bien-ici - ${horsMarcheIgnorees} annonces hors marché ignorées.`);
   await deleteMissingAnnonces("Bien-ici", [...new Set(liensActuels)]);
   console.log("✅ Bien-ici - Scraping terminé !");
 };

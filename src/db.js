@@ -173,18 +173,30 @@ async function seedVilles() {
   await pool.query(`
     INSERT INTO "Villes" (nom, code_postal) VALUES
       ('Vitré', '35500'),
-      ('Châteaugiron', '35410')
+      ('Châteaugiron', '35410'),
+      ('Brécé', '35530'),
+      ('Servon-sur-Vilaine', '35530'),
+      ('Noyal-sur-Vilaine', '35530')
     ON CONFLICT (nom) DO NOTHING
   `);
 
   const vitre        = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Vitré'`)).rows[0].id;
   const chateaugiron = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaugiron'`)).rows[0].id;
+  const brece            = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Brécé'`)).rows[0].id;
+  const servonSurVilaine = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Servon-sur-Vilaine'`)).rows[0].id;
+  const noyalSurVilaine  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Noyal-sur-Vilaine'`)).rows[0].id;
 
   const entries = [
     [vitre,        "acheter-louer",       { loc: "vitre",             cityZip: "35500" }],
     [chateaugiron, "acheter-louer",       { loc: "chateaugiron",      cityZip: "35410" }],
+    [brece,            "acheter-louer",       { loc: "brece",              cityZip: "35530" }],
+    [servonSurVilaine, "acheter-louer",       { loc: "servon-sur-vilaine", cityZip: "35530" }],
+    [noyalSurVilaine,  "acheter-louer",       { loc: "noyal-sur-vilaine",  cityZip: "35530" }],
     [vitre,        "bienici",             { zone_id: "-106682" }],
     [chateaugiron, "bienici",             { zone_id: "-6837759" }],
+    [brece,            "bienici",             { zone_id: "-86731" }],
+    [servonSurVilaine, "bienici",             { zone_id: "-86780" }],
+    [noyalSurVilaine,  "bienici",             { zone_id: "-87346" }],
     [vitre,        "blot",                { nom_input: "Vitré",        label: "VITRE (35500)" }],
     [chateaugiron, "blot",                { nom_input: "Chateaugiron", label: "CHATEAUGIRON (35410)" }],
     [vitre,        "boyer",               { C_65: "35500+VITRE" }],
@@ -194,25 +206,49 @@ async function seedVilles() {
     [chateaugiron, "diard",               { C_65: "35410 CHATEAUGIRON" }],
     [vitre,        "laforet",             { slug: "vitre-35500" }],
     [chateaugiron, "laforet",             { slug: "chateaugiron-35410" }],
+    [brece,            "laforet",             { slug: "brece-35530" }],
+    [servonSurVilaine, "laforet",             { slug: "servon-sur-vilaine-35530" }],
+    [noyalSurVilaine,  "laforet",             { slug: "noyal-sur-vilaine-35530" }],
     [vitre,        "square-habitat",      { region: "bretagne/ille-et-vilaine", slug: "vitre-35500", villeSlug: "vitre" }],
     [chateaugiron, "square-habitat",      { region: "bretagne/ille-et-vilaine", slug: "chateaugiron-35410", villeSlug: "chateaugiron" }],
     [vitre,        "century",             { segment: "cpv-35500_vitre",    cible: true }],
     [chateaugiron, "century",             { segment: "v-chateaugiron",     cible: false }],
+    [servonSurVilaine, "century",             { segment: "v-servon+sur+vilaine", cible: false }],
+    [noyalSurVilaine,  "century",             { segment: "v-noyal+sur+vilaine",  cible: false }],
+    // Brécé n'a pas de page dédiée sur century21.fr (testé : HTTP 410) — pas de config possible.
     [vitre,        "era",                 { era_id: "Vitre-c27606" }],
     [chateaugiron, "era",                 { era_id: "Chateaugiron-c15629" }],
+    [brece,            "era",                 { era_id: "Brece-c14404" }],
+    [servonSurVilaine, "era",                 { era_id: "Servon-sur-Vilaine-c12339" }],
+    [noyalSurVilaine,  "era",                 { era_id: "Noyal-sur-Vilaine-c11998" }],
     [vitre,        "figaro",              { path_slug: "vitre+35500" }],
     [chateaugiron, "figaro",              { path_slug: "chateaugiron+35410" }],
     [vitre,        "fnaim",               { id: "20583",  label: "VITRE (35500)",        type: "3", code: "35500", insee: "35360", value: "VITRE (35500)" }],
     [chateaugiron, "fnaim",               { id: "31189",  label: "CHATEAUGIRON (35410)", type: "3", code: "35410", insee: "35069", value: "CHATEAUGIRON (35410)" }],
+    [brece,            "fnaim",               { id: "29157", label: "BRECE (35530)",              type: "3", code: "35530", insee: "35039", value: "BRECE (35530)" }],
+    [servonSurVilaine, "fnaim",               { id: "28322", label: "SERVON SUR VILAINE (35530)", type: "3", code: "35530", insee: "35327", value: "SERVON SUR VILAINE (35530)" }],
+    [noyalSurVilaine,  "fnaim",               { id: "7916",  label: "NOYAL SUR VILAINE (35530)",  type: "3", code: "35530", insee: "35207", value: "NOYAL SUR VILAINE (35530)" }],
     [vitre,        "immobilier-notaires", { localite_id: "16149" }],
     [chateaugiron, "immobilier-notaires", { localite_id: "15867" }],
+    [brece,            "immobilier-notaires", { localite_id: "15840" }],
+    [servonSurVilaine, "immobilier-notaires", { localite_id: "16117" }],
+    [noyalSurVilaine,  "immobilier-notaires", { localite_id: "15999" }],
     [vitre,        "immonot",             { dept: "35", code_postal: "35500", slug: "vitre" }],
     [chateaugiron, "immonot",             { dept: "35", code_postal: "35410", slug: "chateaugiron" }],
+    [brece,            "immonot",             { dept: "35", code_postal: "35530", slug: "brece" }],
+    [servonSurVilaine, "immonot",             { dept: "35", code_postal: "35530", slug: "servon-sur-vilaine" }],
+    [noyalSurVilaine,  "immonot",             { dept: "35", code_postal: "35530", slug: "noyal-sur-vilaine" }],
     [vitre,        "kermarrec",           { slug: "vitre-35500",        nom: "vitre" }],
     [chateaugiron, "kermarrec",           { slug: "chateaugiron-35410", nom: "chateaugiron", is_primary: true }],
+    [brece,            "kermarrec",           { slug: "brece-35530",              nom: "brece" }],
+    [servonSurVilaine, "kermarrec",           { slug: "servon-sur-vilaine-35530", nom: "servon-sur-vilaine" }],
+    [noyalSurVilaine,  "kermarrec",           { slug: "noyal-sur-vilaine-35530",  nom: "noyal-sur-vilaine" }],
     [vitre,        "logic-immo",          { location_code: "AD08FR14276" }],
     [chateaugiron, "logic-immo",          { location_code: "AD08FR13990" }],
     [vitre,        "notaires-bretons",    { slug: "vitre-35500" }],
+    [brece,            "notaires-bretons",    { slug: "brece-35530" }],
+    [servonSurVilaine, "notaires-bretons",    { slug: "servon-sur-vilaine-35530" }],
+    [noyalSurVilaine,  "notaires-bretons",    { slug: "noyal-sur-vilaine-35530" }],
     [vitre,        "ouest-france",        { lieu_id: "15942" }],
     [chateaugiron, "ouest-france",        { lieu_id: "15645" }],
   ];
@@ -251,6 +287,18 @@ export const VILLES = {
   CHATEAUGIRON: {
     nom: 'Châteaugiron',
     variantes: ['chateaugiron', 'Chateaugiron', 'CHATEAUGIRON', 'châteaugiron', 'Châteaugiron', 'CHÂTEAUGIRON']
+  },
+  BRECE: {
+    nom: 'Brécé',
+    variantes: ['brece', 'Brece', 'BRECE', 'brécé', 'Brécé', 'BRÉCÉ']
+  },
+  SERVON_SUR_VILAINE: {
+    nom: 'Servon-sur-Vilaine',
+    variantes: ['servon-sur-vilaine', 'Servon-sur-Vilaine', 'SERVON-SUR-VILAINE', 'servon sur vilaine', 'SERVON SUR VILAINE']
+  },
+  NOYAL_SUR_VILAINE: {
+    nom: 'Noyal-sur-Vilaine',
+    variantes: ['noyal-sur-vilaine', 'Noyal-sur-Vilaine', 'NOYAL-SUR-VILAINE', 'noyal sur vilaine', 'NOYAL SUR VILAINE']
   }
 };
 

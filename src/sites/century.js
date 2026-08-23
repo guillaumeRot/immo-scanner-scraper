@@ -69,51 +69,56 @@ export const centuryScraper = async () => {
     console.warn("⚠️ Century 21 - Aucune ville configurée en base");
     return;
   }
-  // Century21 exige l'ordre : segments "v-*" avant "cpv-*"
-  const sorted   = [...villeRows].sort((a, b) => a.params.segment.startsWith("v-") ? -1 : 1);
-  const segments = sorted.map(r => r.params.segment).join("/");
-  const cibleRow  = villeRows.find(r => r.params.cible) || villeRows[0];
-  const LIST_URL  =
-    `https://www.century21.fr/annonces/f/achat-maison-immeuble-ancien/${segments}/s-0-/st-0-/b-0-400000/?cible=${cibleRow.params.segment}`;
 
+  // Century21 renvoie une erreur HTTP 410 dès qu'on combine plus de 2 secteurs dans une
+  // même recherche (constaté en ajoutant Servon-sur-Vilaine et Noyal-sur-Vilaine à Vitré
+  // et Châteaugiron : la recherche à 4 segments combinés échouait entièrement, y compris
+  // pour les 2 villes déjà configurées auparavant) — une requête séparée par ville, avec
+  // fusion des liens trouvés, plutôt qu'une seule recherche combinée.
   const liensActuels = [];
-  let currentUrl = LIST_URL;
+  const linksToProcess = new Set();
 
-  while (currentUrl) {
-    console.log(`🔎 Century 21 - Page de liste : ${currentUrl}`);
-    const { links, nextUrl } = await scrapeListPage(currentUrl);
-    console.log(`📌 Century 21 - ${links.length} annonces trouvées.`);
-
-    for (const url of links) {
-      try {
-        console.log(`📄 Century 21 - Page détail : ${url}`);
-        const data = await scrapeDetailPage(url);
-
-        if (data.ville && data.prix) {
-          await insertAnnonce({
-            type: data.type,
-            prix: data.prix,
-            ville: data.ville,
-            pieces: data.pieces,
-            chambres: data.chambres,
-            surface: data.surface,
-            description: data.description,
-            photos: data.photos,
-            agence: "Century 21",
-            lien: url,
-          });
-          liensActuels.push(url);
-        } else {
-          console.warn(`⚠️ Century 21 - Données incomplètes pour ${url}`);
-          await insertErreur("Century 21", url, "Données incomplètes (ville ou prix manquant)");
-        }
-      } catch (err) {
-        console.error(`❌ Century 21 - Erreur sur ${url}:`, err.message);
-        await insertErreur("Century 21", url, String(err));
-      }
+  for (const row of villeRows) {
+    const LIST_URL =
+      `https://www.century21.fr/annonces/f/achat-maison-immeuble-ancien/${row.params.segment}/s-0-/st-0-/b-0-400000/?cible=${row.params.segment}`;
+    console.log(`🔎 Century 21 - Page de liste : ${LIST_URL}`);
+    try {
+      const { links } = await scrapeListPage(LIST_URL);
+      console.log(`📌 Century 21 - ${links.length} annonces trouvées pour ce secteur.`);
+      links.forEach((l) => linksToProcess.add(l));
+    } catch (err) {
+      console.error(`❌ Century 21 - Erreur sur la page de liste ${LIST_URL}:`, err.message);
+      await insertErreur("Century 21", LIST_URL, String(err));
     }
+  }
 
-    currentUrl = nextUrl;
+  for (const url of linksToProcess) {
+    try {
+      console.log(`📄 Century 21 - Page détail : ${url}`);
+      const data = await scrapeDetailPage(url);
+
+      if (data.ville && data.prix) {
+        await insertAnnonce({
+          type: data.type,
+          prix: data.prix,
+          ville: data.ville,
+          pieces: data.pieces,
+          chambres: data.chambres,
+          surface: data.surface,
+          description: data.description,
+          photos: data.photos,
+          agence: "Century 21",
+          lien: url,
+        });
+        liensActuels.push(url);
+      } else {
+        console.warn(`⚠️ Century 21 - Données incomplètes pour ${url}`);
+        await insertErreur("Century 21", url, "Données incomplètes (ville ou prix manquant)");
+      }
+    } catch (err) {
+      console.error(`❌ Century 21 - Erreur sur ${url}:`, err.message);
+      await insertErreur("Century 21", url, String(err));
+    }
   }
 
   await deleteMissingAnnonces("Century 21", Array.from(new Set(liensActuels)));
