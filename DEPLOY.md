@@ -115,22 +115,27 @@ l'exemple ci-dessus tel quel)
 
 ## 2bis. Notifications par email des nouvelles annonces
 
-Crée **une tâche cron-job.org supplémentaire** (indépendante des scrapers) :
+Ventes et locations sont notifiées par **deux tâches cron-job.org séparées** (indépendantes
+des scrapers et l'une de l'autre) — pour pouvoir mettre en pause l'une sans toucher à
+l'autre (ex: pause des notifications de location), il suffit de désactiver la tâche
+correspondante dans cron-job.org, sans changer de code.
 
-- **URL** : `https://<ton-domaine-vercel>.vercel.app/send-notifications?secret=<CRON_SECRET>`
+- **URL ventes** : `https://<ton-domaine-vercel>.vercel.app/send-notifications-ventes?secret=<CRON_SECRET>`
+- **URL locations** : `https://<ton-domaine-vercel>.vercel.app/send-notifications-locations?secret=<CRON_SECRET>`
 - **Méthode** : GET
 - **Planification** : décalée de 15-20 min après chaque créneau de scraping (ex: si les
-  scrapers tournent à 4h/10h/16h UTC, planifier cette tâche à 4h20/10h20/16h20 UTC) — le
+  scrapers tournent à 4h/10h/16h UTC, planifier ces tâches à 4h20/10h20/16h20 UTC) — le
   temps que tous les scrapers du créneau aient fini avant l'envoi du récapitulatif.
 
-Fonctionnement : chaque annonce nouvellement insérée démarre avec `notifie = false`. Cet
-endpoint réclame (de façon atomique, transaction SQL) toutes les lignes `notifie = false`
-de `Annonce` et `AnnonceLocation`, envoie **un seul email récapitulatif** s'il y en a, puis
-les marque `notifie = true`. Une mise à jour d'une annonce déjà connue (prix qui change,
-etc.) ne remet pas `notifie` à `false` — seules les vraies nouveautés déclenchent un email.
+Fonctionnement (identique pour les deux) : chaque annonce nouvellement insérée démarre
+avec `notifie = false`. Chaque endpoint réclame atomiquement toutes les lignes
+`notifie = false` de sa table (`Annonce` pour les ventes, `AnnonceLocation` pour les
+locations), envoie **un seul email récapitulatif** s'il y en a, puis les marque
+`notifie = true`. Une mise à jour d'une annonce déjà connue (prix qui change, etc.) ne
+remet pas `notifie` à `false` — seules les vraies nouveautés déclenchent un email.
 
-⚠️ Si tu changes la fréquence des scrapers plus tard, pense à réajuster l'horaire de cette
-tâche pour qu'elle reste décalée après le nouveau créneau.
+⚠️ Si tu changes la fréquence des scrapers plus tard, pense à réajuster l'horaire de ces
+tâches pour qu'elles restent décalées après le nouveau créneau.
 
 ## 2ter. Rapport des erreurs de scraping
 
@@ -140,11 +145,12 @@ supplémentaire** pour ça :
 
 - **URL** : `https://<ton-domaine-vercel>.vercel.app/send-error-report?secret=<CRON_SECRET>`
 - **Méthode** : GET
-- **Planification** : décalée après le créneau de scraping, comme `/send-notifications`
-  (ex: 4h20/10h20/16h20 UTC si les scrapers tournent à 4h/10h/16h UTC) — le temps que
-  chaque scraping déclenché en arrière-plan ait fini avant l'envoi du récapitulatif.
+- **Planification** : décalée après le créneau de scraping, comme les endpoints de
+  notifications ci-dessus (ex: 4h20/10h20/16h20 UTC si les scrapers tournent à 4h/10h/16h
+  UTC) — le temps que chaque scraping déclenché en arrière-plan ait fini avant l'envoi du
+  récapitulatif.
 
-Fonctionnement : identique à `/send-notifications` mais sur la table `Erreur` — chaque
+Fonctionnement : identique aux endpoints de notifications ci-dessus mais sur la table `Erreur` — chaque
 nouvelle erreur (page en échec, run incomplet après échec persistant/budget de temps
 dépassé) démarre avec `notifie = false`. Cet endpoint réclame atomiquement toutes les
 lignes `notifie = false`, envoie **un seul email récapitulatif** s'il y en a, puis les

@@ -836,38 +836,36 @@ export async function updateScanTable(scraper, startTime) {
 }
 
 /**
- * Réclame atomiquement toutes les annonces (vente + location) pas encore notifiées :
- * les marque notifie=true dans la même transaction que la lecture, pour qu'un appel
- * concurrent ne puisse jamais récupérer les mêmes lignes deux fois (évite les doublons
- * d'email si /send-notifications est appelé plusieurs fois proche dans le temps).
+ * Réclame atomiquement toutes les ventes pas encore notifiées : les marque notifie=true
+ * au même moment que la lecture (UPDATE ... RETURNING), pour qu'un appel concurrent ne
+ * puisse jamais récupérer les mêmes lignes deux fois. Séparé de claimUnnotifiedLocations
+ * pour permettre de mettre en pause les notifications de location indépendamment
+ * (cron-job.org : deux tâches distinctes plutôt qu'une seule combinée).
  */
-export async function claimUnnotifiedAnnonces() {
+export async function claimUnnotifiedVentes() {
   if (!pool) throw new Error("Pool non initialisé");
+  const res = await pool.query(
+    `UPDATE "Annonce" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
+  );
+  return res.rows;
+}
 
-  const client = await pool.connect();
-  try {
-    await client.query("BEGIN");
-    const ventes = await client.query(
-      `UPDATE "Annonce" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
-    );
-    const locations = await client.query(
-      `UPDATE "AnnonceLocation" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
-    );
-    await client.query("COMMIT");
-    return { ventes: ventes.rows, locations: locations.rows };
-  } catch (err) {
-    await client.query("ROLLBACK");
-    throw err;
-  } finally {
-    client.release();
-  }
+/**
+ * Réclame atomiquement toutes les locations pas encore notifiées (cf. claimUnnotifiedVentes).
+ */
+export async function claimUnnotifiedLocations() {
+  if (!pool) throw new Error("Pool non initialisé");
+  const res = await pool.query(
+    `UPDATE "AnnonceLocation" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
+  );
+  return res.rows;
 }
 
 /**
  * Réclame atomiquement toutes les erreurs pas encore notifiées : les marque
  * notifie=true dans la même transaction que la lecture, pour qu'un appel concurrent
  * ne puisse jamais récupérer les mêmes lignes deux fois (même logique que
- * claimUnnotifiedAnnonces, cf. /send-error-report).
+ * claimUnnotifiedVentes/claimUnnotifiedLocations, cf. /send-error-report).
  */
 export async function claimUnnotifiedErreurs() {
   if (!pool) throw new Error("Pool non initialisé");

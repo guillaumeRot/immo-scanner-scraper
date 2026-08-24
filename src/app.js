@@ -1,8 +1,8 @@
 import 'dotenv/config';
 import express from 'express';
 import { waitUntil } from '@vercel/functions';
-import { initDb, updateScanTable, claimUnnotifiedAnnonces, claimUnnotifiedErreurs, insertErreur } from './db.js';
-import { sendNewAnnoncesEmail, sendErrorReportEmail } from './email.js';
+import { initDb, updateScanTable, claimUnnotifiedVentes, claimUnnotifiedLocations, claimUnnotifiedErreurs, insertErreur } from './db.js';
+import { sendNewVentesEmail, sendNewLocationsEmail, sendErrorReportEmail } from './email.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper, kermarrecLocationScraper } from './sites/kermarrec.js';
 import { eraScraper, eraLocationScraper } from './sites/era.js';
@@ -164,23 +164,37 @@ app.get('/run-scrapers', async (req, res) => {
   }
 });
 
-// Déclenché par un cron-job.org séparé (indépendant du rythme des scrapers) : regarde
-// s'il y a des annonces pas encore notifiées et, si oui, envoie un seul email récapitulatif.
+// Déclenchés par deux tâches cron-job.org séparées (indépendantes du rythme des
+// scrapers et l'une de l'autre) : chacune regarde s'il y a des annonces pas encore
+// notifiées pour son type et, si oui, envoie un seul email récapitulatif. Séparés en deux
+// endpoints distincts pour pouvoir mettre en pause les notifications de location (ou de
+// vente) indépendamment, en désactivant simplement la tâche cron-job.org correspondante.
 // Prévoir un décalage dans le planning cron-job.org (ex: 15-20 min après le créneau de
 // scraping) pour laisser le temps à tous les scrapers du lot de terminer avant l'envoi.
-app.get('/send-notifications', async (req, res) => {
+app.get('/send-notifications-ventes', async (req, res) => {
   if (!checkAuth(req, res)) return;
 
   try {
     await initDb();
-    const { ventes, locations } = await claimUnnotifiedAnnonces();
-    await sendNewAnnoncesEmail(ventes, locations);
-    res.json({
-      status: "done",
-      message: `${ventes.length} vente(s) et ${locations.length} location(s) notifiée(s).`,
-    });
+    const ventes = await claimUnnotifiedVentes();
+    await sendNewVentesEmail(ventes);
+    res.json({ status: "done", message: `${ventes.length} vente(s) notifiée(s).` });
   } catch (e) {
-    console.error("❌ Erreur dans /send-notifications:", e);
+    console.error("❌ Erreur dans /send-notifications-ventes:", e);
+    res.status(500).json({ status: "error", message: e.message });
+  }
+});
+
+app.get('/send-notifications-locations', async (req, res) => {
+  if (!checkAuth(req, res)) return;
+
+  try {
+    await initDb();
+    const locations = await claimUnnotifiedLocations();
+    await sendNewLocationsEmail(locations);
+    res.json({ status: "done", message: `${locations.length} location(s) notifiée(s).` });
+  } catch (e) {
+    console.error("❌ Erreur dans /send-notifications-locations:", e);
     res.status(500).json({ status: "error", message: e.message });
   }
 });
@@ -189,7 +203,8 @@ app.get('/send-notifications', async (req, res) => {
 // (réponse immédiate à /run-scrapers, cf. plus haut), c'est ce endpoint — et non plus le
 // code HTTP de /run-scrapers — qui remonte les échecs de scraping. Regarde s'il y a des
 // erreurs pas encore notifiées dans la table Erreur et, si oui, envoie un seul email
-// récapitulatif. Prévoir un décalage après le créneau de scraping, comme /send-notifications.
+// récapitulatif. Prévoir un décalage après le créneau de scraping, comme les endpoints
+// de notifications ci-dessus.
 app.get('/send-error-report', async (req, res) => {
   if (!checkAuth(req, res)) return;
 

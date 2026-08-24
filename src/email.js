@@ -39,47 +39,54 @@ function annonceCardHtml(a, { estLocation }) {
     </tr>`;
 }
 
-function buildDigestHtml(ventes, locations) {
-  const sections = [];
-  if (ventes.length) {
-    sections.push(`
-      <h2 style="font-size:16px;color:#111;margin:24px 0 8px;">🏠 Ventes (${ventes.length})</h2>
-      <table width="100%" cellpadding="0" cellspacing="0">${ventes.map((a) => annonceCardHtml(a, { estLocation: false })).join("")}</table>
-    `);
-  }
-  if (locations.length) {
-    sections.push(`
-      <h2 style="font-size:16px;color:#111;margin:24px 0 8px;">🔑 Locations (${locations.length})</h2>
-      <table width="100%" cellpadding="0" cellspacing="0">${locations.map((a) => annonceCardHtml(a, { estLocation: true })).join("")}</table>
-    `);
-  }
+function buildDigestHtml(titre, annonces, { estLocation }) {
+  const table = `<table width="100%" cellpadding="0" cellspacing="0">${annonces.map((a) => annonceCardHtml(a, { estLocation })).join("")}</table>`;
 
   return `
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;margin:0 auto;padding:16px;">
-      <h1 style="font-size:18px;color:#111;">Nouvelles annonces — Vitré / Châteaugiron</h1>
-      ${sections.join("")}
+      <h1 style="font-size:18px;color:#111;">${titre}</h1>
+      ${table}
     </div>`;
 }
 
 /**
- * Envoie un email récapitulatif pour un lot d'annonces nouvellement détectées.
+ * Envoie un email récapitulatif pour un lot de ventes nouvellement détectées.
  * Ne fait rien (et ne lève pas d'erreur) si le lot est vide.
  */
-export async function sendNewAnnoncesEmail(ventes, locations) {
-  const total = ventes.length + locations.length;
-  if (total === 0) return;
+export async function sendNewVentesEmail(ventes) {
+  if (ventes.length === 0) return;
 
   const dest = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER;
-  const sujet = `🏡 ${total} nouvelle${total > 1 ? "s" : ""} annonce${total > 1 ? "s" : ""} — Vitré / Châteaugiron`;
+  const sujet = `🏠 ${ventes.length} nouvelle${ventes.length > 1 ? "s" : ""} vente${ventes.length > 1 ? "s" : ""}`;
 
   await getTransporter().sendMail({
     from: `"Immo Scanner" <${process.env.GMAIL_USER}>`,
     to: dest,
     subject: sujet,
-    html: buildDigestHtml(ventes, locations),
+    html: buildDigestHtml(sujet, ventes, { estLocation: false }),
   });
 
-  console.log(`✅ Email envoyé (${ventes.length} vente(s), ${locations.length} location(s)) à ${dest}`);
+  console.log(`✅ Email envoyé (${ventes.length} vente(s)) à ${dest}`);
+}
+
+/**
+ * Envoie un email récapitulatif pour un lot de locations nouvellement détectées.
+ * Ne fait rien (et ne lève pas d'erreur) si le lot est vide.
+ */
+export async function sendNewLocationsEmail(locations) {
+  if (locations.length === 0) return;
+
+  const dest = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER;
+  const sujet = `🔑 ${locations.length} nouvelle${locations.length > 1 ? "s" : ""} location${locations.length > 1 ? "s" : ""}`;
+
+  await getTransporter().sendMail({
+    from: `"Immo Scanner" <${process.env.GMAIL_USER}>`,
+    to: dest,
+    subject: sujet,
+    html: buildDigestHtml(sujet, locations, { estLocation: true }),
+  });
+
+  console.log(`✅ Email envoyé (${locations.length} location(s)) à ${dest}`);
 }
 
 function erreurRowHtml(e) {
@@ -97,7 +104,7 @@ function erreurRowHtml(e) {
 function buildErrorReportHtml(erreurs) {
   return `
     <div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:560px;margin:0 auto;padding:16px;">
-      <h1 style="font-size:18px;color:#111;">⚠️ ${erreurs.length} erreur${erreurs.length > 1 ? "s" : ""} scraper — Vitré / Châteaugiron</h1>
+      <h1 style="font-size:18px;color:#111;">⚠️ ${erreurs.length} erreur${erreurs.length > 1 ? "s" : ""} scraper</h1>
       <table width="100%" cellpadding="0" cellspacing="0">${erreurs.map(erreurRowHtml).join("")}</table>
     </div>`;
 }
@@ -110,7 +117,7 @@ export async function sendErrorReportEmail(erreurs) {
   if (erreurs.length === 0) return;
 
   const dest = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER;
-  const sujet = `⚠️ ${erreurs.length} erreur${erreurs.length > 1 ? "s" : ""} scraper — Vitré / Châteaugiron`;
+  const sujet = `⚠️ ${erreurs.length} erreur${erreurs.length > 1 ? "s" : ""} scraper`;
 
   await getTransporter().sendMail({
     from: `"Immo Scanner" <${process.env.GMAIL_USER}>`,
