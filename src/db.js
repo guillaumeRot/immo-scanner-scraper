@@ -161,10 +161,22 @@ async function ensureTablesExists() {
       params JSONB NOT NULL,
       UNIQUE(ville_id, scraper)
     );
+
+    -- Pilotée depuis un autre projet (front) qui lit/écrit directement cette table :
+    -- décide, par ville et par type de transaction, si une annonce doit déclencher un
+    -- email via /send-notifications-ventes et /send-notifications-locations. N'affecte
+    -- ni le scraping ni le stockage (Annonce/AnnonceLocation) — uniquement l'envoi.
+    CREATE TABLE IF NOT EXISTS "NotificationPreferences" (
+      id SERIAL PRIMARY KEY,
+      ville_id INTEGER NOT NULL REFERENCES "Villes"(id) ON DELETE CASCADE,
+      type_transaction VARCHAR(10) NOT NULL CHECK (type_transaction IN ('vente', 'location')),
+      actif BOOLEAN DEFAULT TRUE,
+      UNIQUE(ville_id, type_transaction)
+    );
   `;
 
   await pool.query(createVillesTableQuery);
-  console.log("✅ Tables 'Villes' et 'VilleScraperParams' vérifiées/créées");
+  console.log("✅ Tables 'Villes', 'VilleScraperParams' et 'NotificationPreferences' vérifiées/créées");
 
   await seedVilles();
 }
@@ -189,6 +201,18 @@ async function seedVilles() {
   const noyalSurVilaine  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Noyal-sur-Vilaine'`)).rows[0].id;
   const acigne        = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Acigné'`)).rows[0].id;
   const chateaubourg  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaubourg'`)).rows[0].id;
+
+  // Préférences de notification par défaut : tout actif (comportement inchangé tant que
+  // rien n'est désactivé depuis le front qui pilote cette table). ON CONFLICT DO NOTHING
+  // pour ne jamais écraser un choix déjà fait.
+  for (const villeId of [vitre, chateaugiron, brece, servonSurVilaine, noyalSurVilaine, acigne, chateaubourg]) {
+    for (const type of ["vente", "location"]) {
+      await pool.query(
+        `INSERT INTO "NotificationPreferences" (ville_id, type_transaction) VALUES ($1, $2) ON CONFLICT (ville_id, type_transaction) DO NOTHING`,
+        [villeId, type]
+      );
+    }
+  }
 
   const entries = [
     [vitre,        "acheter-louer",       { loc: "vitre",             cityZip: "35500" }],
@@ -841,23 +865,43 @@ export async function updateScanTable(scraper, startTime) {
  * puisse jamais récupérer les mêmes lignes deux fois. Séparé de claimUnnotifiedLocations
  * pour permettre de mettre en pause les notifications de location indépendamment
  * (cron-job.org : deux tâches distinctes plutôt qu'une seule combinée).
+ *
+ * Toutes les lignes non notifiées sont réclamées (marquées notifie=true) pour ne jamais
+ * s'accumuler, mais seules celles dont la ville a la préférence "vente" active dans
+ * NotificationPreferences (pilotée par un autre projet/front) sont retournées pour
+ * déclencher un email — une ville désactivée est donc réclamée en silence, pas ignorée.
  */
 export async function claimUnnotifiedVentes() {
   if (!pool) throw new Error("Pool non initialisé");
-  const res = await pool.query(
-    `UPDATE "Annonce" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
-  );
+  const res = await pool.query(`
+    WITH claimed AS (
+      UPDATE "Annonce" SET notifie = TRUE WHERE notifie = FALSE RETURNING *
+    )
+    SELECT claimed.*
+    FROM claimed
+    LEFT JOIN "Villes" v ON v.nom = claimed.ville
+    LEFT JOIN "NotificationPreferences" np ON np.ville_id = v.id AND np.type_transaction = 'vente'
+    WHERE COALESCE(np.actif, TRUE) = TRUE
+  `);
   return res.rows;
 }
 
 /**
- * Réclame atomiquement toutes les locations pas encore notifiées (cf. claimUnnotifiedVentes).
+ * Réclame atomiquement toutes les locations pas encore notifiées (cf. claimUnnotifiedVentes
+ * pour le fonctionnement du filtre NotificationPreferences).
  */
 export async function claimUnnotifiedLocations() {
   if (!pool) throw new Error("Pool non initialisé");
-  const res = await pool.query(
-    `UPDATE "AnnonceLocation" SET notifie = TRUE WHERE notifie = FALSE RETURNING *`
-  );
+  const res = await pool.query(`
+    WITH claimed AS (
+      UPDATE "AnnonceLocation" SET notifie = TRUE WHERE notifie = FALSE RETURNING *
+    )
+    SELECT claimed.*
+    FROM claimed
+    LEFT JOIN "Villes" v ON v.nom = claimed.ville
+    LEFT JOIN "NotificationPreferences" np ON np.ville_id = v.id AND np.type_transaction = 'location'
+    WHERE COALESCE(np.actif, TRUE) = TRUE
+  `);
   return res.rows;
 }
 
