@@ -1,7 +1,7 @@
 import 'dotenv/config';
 import express from 'express';
 import { waitUntil } from '@vercel/functions';
-import { initDb, updateScanTable, claimUnnotifiedVentes, claimUnnotifiedLocations, claimUnnotifiedErreurs, insertErreur } from './db.js';
+import { initDb, updateScanTable, claimUnnotifiedVentes, claimUnnotifiedLocations, claimUnnotifiedErreurs, purgeOldErreurs, insertErreur } from './db.js';
 import { sendNewVentesEmail, sendNewLocationsEmail, sendErrorReportEmail } from './email.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper, kermarrecLocationScraper } from './sites/kermarrec.js';
@@ -212,9 +212,12 @@ app.get('/send-error-report', async (req, res) => {
     await initDb();
     const erreurs = await claimUnnotifiedErreurs();
     await sendErrorReportEmail(erreurs);
+    // Purge à chaque passage plutôt que sur une tâche cron dédiée : /send-error-report
+    // tourne déjà régulièrement, pas besoin d'un déclencheur de plus pour ça.
+    const supprimees = await purgeOldErreurs();
     res.json({
       status: "done",
-      message: `${erreurs.length} erreur(s) notifiée(s).`,
+      message: `${erreurs.length} erreur(s) notifiée(s), ${supprimees} ancienne(s) supprimée(s).`,
     });
   } catch (e) {
     console.error("❌ Erreur dans /send-error-report:", e);

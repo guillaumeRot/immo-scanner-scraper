@@ -777,13 +777,23 @@ export async function insertErreur(scraper, url, message) {
   if (!pool) throw new Error("Pool non initialisé");
 
   try {
-    const insertQuery = `
-      INSERT INTO "Erreur" (scraper, url, message, date_erreur)
-      VALUES ($1, $2, $3, NOW());
-    `;
+    // Déduplication : une fiche cassée côté site source échoue souvent à l'identique à
+    // chaque run (constaté : certaines fiches Diard/Boyer/ERA en échec 5 à 8 fois de
+    // suite) — on rafraîchit la ligne existante plutôt que d'empiler une nouvelle
+    // occurrence tant qu'elle n'a pas encore été notifiée (/send-error-report).
+    const updateRes = await pool.query(
+      `UPDATE "Erreur" SET message = $3, date_erreur = NOW()
+       WHERE scraper = $1 AND url = $2 AND notifie = FALSE
+       RETURNING id`,
+      [scraper, url, message]
+    );
 
-    const values = [scraper, url, message];
-    await pool.query(insertQuery, values);
+    if (updateRes.rowCount === 0) {
+      await pool.query(
+        `INSERT INTO "Erreur" (scraper, url, message, date_erreur) VALUES ($1, $2, $3, NOW())`,
+        [scraper, url, message]
+      );
+    }
 
     console.log(`⚠️ Erreur enregistrée pour ${scraper}: ${message}`);
   } catch (err) {
@@ -928,6 +938,24 @@ export async function claimUnnotifiedErreurs() {
   } finally {
     client.release();
   }
+}
+
+/**
+ * Supprime les erreurs déjà notifiées (donc déjà vues dans un rapport) datant de plus de
+ * `joursRetention` jours, pour ne pas laisser la table Erreur grossir indéfiniment avec
+ * de l'historique qui n'est plus pertinent. Ne touche jamais aux erreurs pas encore
+ * notifiées, quel que soit leur âge.
+ */
+export async function purgeOldErreurs(joursRetention = 30) {
+  if (!pool) throw new Error("Pool non initialisé");
+  const res = await pool.query(
+    `DELETE FROM "Erreur" WHERE notifie = TRUE AND date_erreur < NOW() - ($1 || ' days')::interval`,
+    [joursRetention]
+  );
+  if (res.rowCount > 0) {
+    console.log(`🧹 ${res.rowCount} erreur(s) de plus de ${joursRetention} jours supprimée(s).`);
+  }
+  return res.rowCount;
 }
 
 export async function closeDb() {

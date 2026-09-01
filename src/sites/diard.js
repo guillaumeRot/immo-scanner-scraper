@@ -37,10 +37,12 @@ const FETCH_TIMEOUT_MS = 10000;
 // Budget de temps global par run : interrompt proprement le scraper avant le maxDuration
 // Vercel plutôt que de le laisser se faire tuer en plein milieu. Le check n'a lieu qu'entre
 // deux itérations : une dernière requête déjà lancée peut encore coûter jusqu'à ~22s
-// (timeout + réessai) après que le budget soit dépassé — 30s laisse encore ~8s de marge
-// sous les 60s de maxDuration pour ce cas, tout en couvrant largement plus de travail
-// qu'avant (2 villes seulement pour ce projet).
-const BUDGET_MS = 30000;
+// (timeout + réessai) après que le budget soit dépassé — 35s laisse encore ~3-5s de marge
+// sous les 60s de maxDuration pour ce cas. Constaté : Diard (location) concentre à lui
+// seul ~48% des erreurs "budget dépassé" même à 30s (site chroniquement lent) — on ne
+// peut pas monter beaucoup plus haut sans risquer de se faire tuer par Vercel en cours de
+// route (pire que l'arrêt propre actuel) plutôt que de réduire le timeout par requête.
+const BUDGET_MS = 35000;
 
 async function fetchOnce(url) {
   const controller = new AbortController();
