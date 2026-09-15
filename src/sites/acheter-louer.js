@@ -28,7 +28,16 @@ async function fetchHtml(url, retries = 3) {
   throw new Error(`HTTP fetch failed for ${url}`);
 }
 
-async function scrapeListPage(url) {
+// Quand il n'y a aucun résultat réel pour la recherche demandée, le site affiche quand
+// même des cartes ".CardSearchResult" mais avec des biens piochés au hasard ailleurs en
+// France (constaté : bureaux à Aixe-sur-Vienne, appartements à Paris/Villeurbanne/Mégève...
+// pour une recherche Vitré) — indiscernables des vrais résultats dans le HTML. On ne garde
+// donc que les liens dont l'URL contient effectivement un des slugs de ville demandés.
+function filterLiensVilles(links, validLocs) {
+  return links.filter((href) => validLocs.some((loc) => href.toLowerCase().includes(loc.toLowerCase())));
+}
+
+async function scrapeListPage(url, validLocs) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
   const links = new Set();
@@ -38,10 +47,10 @@ async function scrapeListPage(url) {
       links.add(href.startsWith("http") ? href : `${BASE_URL}${href}`);
     }
   });
-  return [...links];
+  return filterLiensVilles([...links], validLocs);
 }
 
-async function scrapeLocationListPage(url) {
+async function scrapeLocationListPage(url, validLocs) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
   const links = new Set();
@@ -51,7 +60,7 @@ async function scrapeLocationListPage(url) {
       links.add(href.startsWith("http") ? href : `${BASE_URL}${href}`);
     }
   });
-  return [...links];
+  return filterLiensVilles([...links], validLocs);
 }
 
 async function fetchApi(url, retries = 3) {
@@ -113,7 +122,7 @@ export const acheterLouerLocationScraper = async () => {
   for (const row of villeRows) {
     const LIST_URL = `${BASE_URL}/annonces/immobilier/location-appartement-${row.params.loc}`;
     console.log(`🔎 Acheter-louer (location) - Page de liste : ${LIST_URL}`);
-    const links = await scrapeLocationListPage(LIST_URL);
+    const links = await scrapeLocationListPage(LIST_URL, [row.params.loc]);
     console.log(`📌 Acheter-louer (location) - ${links.length} annonces trouvées.`);
 
     for (const url of links) {
@@ -166,7 +175,7 @@ export const acheterLouerScraper = async () => {
 
   const liensActuels = [];
 
-  const links = await scrapeListPage(LIST_URL);
+  const links = await scrapeListPage(LIST_URL, villeRows.map((r) => r.params.loc));
   console.log(`📌 Acheter-louer - ${links.length} annonces trouvées.`);
 
   for (const url of links) {
