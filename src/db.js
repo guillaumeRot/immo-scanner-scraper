@@ -190,7 +190,11 @@ async function seedVilles() {
       ('Servon-sur-Vilaine', '35530'),
       ('Noyal-sur-Vilaine', '35530'),
       ('Acigné', '35690'),
-      ('Châteaubourg', '35220')
+      ('Châteaubourg', '35220'),
+      ('Fyé', '72610'),
+      ('Champfleur', '72610'),
+      ('Arçonnay', '72610'),
+      ('Oisseau-le-Petit', '72610')
     ON CONFLICT (nom) DO NOTHING
   `);
 
@@ -201,11 +205,15 @@ async function seedVilles() {
   const noyalSurVilaine  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Noyal-sur-Vilaine'`)).rows[0].id;
   const acigne        = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Acigné'`)).rows[0].id;
   const chateaubourg  = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Châteaubourg'`)).rows[0].id;
+  const fye               = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Fyé'`)).rows[0].id;
+  const champfleur        = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Champfleur'`)).rows[0].id;
+  const arconnay          = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Arçonnay'`)).rows[0].id;
+  const oisseauLePetit    = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Oisseau-le-Petit'`)).rows[0].id;
 
   // Préférences de notification par défaut : tout actif (comportement inchangé tant que
   // rien n'est désactivé depuis le front qui pilote cette table). ON CONFLICT DO NOTHING
   // pour ne jamais écraser un choix déjà fait.
-  for (const villeId of [vitre, chateaugiron, brece, servonSurVilaine, noyalSurVilaine, acigne, chateaubourg]) {
+  for (const villeId of [vitre, chateaugiron, brece, servonSurVilaine, noyalSurVilaine, acigne, chateaubourg, fye, champfleur, arconnay, oisseauLePetit]) {
     for (const type of ["vente", "location"]) {
       await pool.query(
         `INSERT INTO "NotificationPreferences" (ville_id, type_transaction) VALUES ($1, $2) ON CONFLICT (ville_id, type_transaction) DO NOTHING`,
@@ -327,6 +335,69 @@ async function seedVilles() {
     [noyalSurVilaine,  "notaires-bretons",    { slug: "noyal-sur-vilaine-35530" }],
     [vitre,        "ouest-france",        { lieu_id: "15942" }],
     [chateaugiron, "ouest-france",        { lieu_id: "15645" }],
+
+    // --- Secteur Sarthe (72) : Fyé, Champfleur, Arçonnay, Oisseau-le-Petit ---
+    // Mêmes filtres que le secteur Vitré/Châteaugiron (maison+immeuble, 400k€) : identifiants
+    // vérifiés un par un (SSR + correspondance du nom/code INSEE retourné par chaque site),
+    // pas devinés, avant d'être ajoutés ici.
+    [fye,            "square-habitat",      { region: "pays-de-la-loire/sarthe", slug: "fye-72610", villeSlug: "fye" }],
+    [champfleur,     "square-habitat",      { region: "pays-de-la-loire/sarthe", slug: "champfleur-72610", villeSlug: "champfleur" }],
+    [arconnay,       "square-habitat",      { region: "pays-de-la-loire/sarthe", slug: "arconnay-72610", villeSlug: "arconnay" }],
+    [oisseauLePetit, "square-habitat",      { region: "pays-de-la-loire/sarthe", slug: "oisseau-le-petit-72610", villeSlug: "oisseau-le-petit" }],
+    [fye,            "era",                 { era_id: "Fye-c17587" }],
+    [champfleur,     "era",                 { era_id: "Champfleur-c31136" }],
+    [arconnay,       "era",                 { era_id: "Arconnay-c20918" }],
+    [oisseauLePetit, "era",                 { era_id: "Oisseau-le-Petit-c8130" }],
+    [fye,            "century",             { segment: "v-fye", cible: false }],
+    [champfleur,     "century",             { segment: "v-champfleur", cible: false }],
+    [arconnay,       "century",             { segment: "v-arconnay", cible: false }],
+    [oisseauLePetit, "century",             { segment: "v-oisseau+le+petit", cible: false }],
+    // Laforêt : aucune page ville dédiée en Sarthe (confirmé par leur sitemap officiel, 0
+    // entrée pour tout le département 72, slugs testés redirigeant systématiquement vers une
+    // page région générique) — pas de config possible pour ce scraper sur ce secteur.
+    [fye,            "fnaim",               { id: "36456", label: "FYE (72610)",             type: "3", code: "72610", insee: "72139", value: "FYE (72610)" }],
+    [champfleur,     "fnaim",               { id: "17231", label: "CHAMPFLEUR (72610)",       type: "3", code: "72610", insee: "72056", value: "CHAMPFLEUR (72610)" }],
+    [arconnay,       "fnaim",               { id: "7504",  label: "ARCONNAY (72610)",         type: "3", code: "72610", insee: "72006", value: "ARCONNAY (72610)" }],
+    [oisseauLePetit, "fnaim",               { id: "6801",  label: "OISSEAU LE PETIT (72610)",  type: "3", code: "72610", insee: "72225", value: "OISSEAU LE PETIT (72610)" }],
+    [fye,            "immobilier-notaires", { localite_id: "31631" }],
+    [champfleur,     "immobilier-notaires", { localite_id: "31549" }],
+    [arconnay,       "immobilier-notaires", { localite_id: "31502" }],
+    [oisseauLePetit, "immobilier-notaires", { localite_id: "31716" }],
+    [fye,            "immonot",             { dept: "72", code_postal: "72610", slug: "fye" }],
+    [champfleur,     "immonot",             { dept: "72", code_postal: "72610", slug: "champfleur" }],
+    [arconnay,       "immonot",             { dept: "72", code_postal: "72610", slug: "arconnay" }],
+    [oisseauLePetit, "immonot",             { dept: "72", code_postal: "72610", slug: "oisseau-le-petit" }],
+    [fye,            "iad-france",          { slug: "fye-72610" }],
+    [champfleur,     "iad-france",          { slug: "champfleur-72610" }],
+    [arconnay,       "iad-france",          { slug: "arconnay-72610" }],
+    [oisseauLePetit, "iad-france",          { slug: "oisseau-le-petit-72610" }],
+    [fye,            "bienici",             { zone_id: "-107538" }],
+    [champfleur,     "bienici",             { zone_id: "-107630" }],
+    [arconnay,       "bienici",             { zone_id: "-107511" }],
+    [oisseauLePetit, "bienici",             { zone_id: "-107496" }],
+    // Efficity (bloqué par un challenge Cloudflare sur toute requête, y compris les villes
+    // déjà en prod — pas spécifique à ce secteur) et Acheter-louer (le site semble avoir migré
+    // vers une appli Next.js qui ne rend plus les résultats côté serveur, y compris pour
+    // Vitré/Châteaugiron déjà configurés — à vérifier séparément) : valeurs ajoutées par
+    // cohérence de format avec les autres villes, mais non vérifiables pour le moment.
+    [fye,            "efficity",            { slug: "fye_72" }],
+    [champfleur,     "efficity",            { slug: "champfleur_72" }],
+    [arconnay,       "efficity",            { slug: "arconnay_72" }],
+    [oisseauLePetit, "efficity",            { slug: "oisseau-le-petit_72" }],
+    [fye,            "acheter-louer",       { loc: "fye", cityZip: "72610" }],
+    [champfleur,     "acheter-louer",       { loc: "champfleur", cityZip: "72610" }],
+    [arconnay,       "acheter-louer",       { loc: "arconnay", cityZip: "72610" }],
+    [oisseauLePetit, "acheter-louer",       { loc: "oisseau-le-petit", cityZip: "72610" }],
+
+    // Agences locales dédiées à ce secteur (cf. src/sites/alc-immobilier.js et
+    // src/sites/my-home-immobilier.js) : ALC Immobilier ne couvre, parmi nos 4 communes, que
+    // Champfleur et Arçonnay (absentes du sélecteur ville de leur site pour Fyé/Oisseau-le-Petit).
+    [champfleur,     "alc-immobilier",      {}],
+    [arconnay,       "alc-immobilier",      {}],
+    [fye,            "my-home-immobilier",  { slug: "fye" }],
+    [champfleur,     "my-home-immobilier",  { slug: "champfleur" }],
+    [arconnay,       "my-home-immobilier",  { slug: "arconnay" }],
+    [oisseauLePetit, "my-home-immobilier",  { slug: "oisseau_le_petit" }],
   ];
 
   for (const [ville_id, scraper, p] of entries) {
@@ -383,6 +454,22 @@ export const VILLES = {
   CHATEAUBOURG: {
     nom: 'Châteaubourg',
     variantes: ['chateaubourg', 'Chateaubourg', 'CHATEAUBOURG', 'châteaubourg', 'Châteaubourg', 'CHÂTEAUBOURG']
+  },
+  FYE: {
+    nom: 'Fyé',
+    variantes: ['fye', 'Fye', 'FYE', 'fyé', 'Fyé', 'FYÉ']
+  },
+  CHAMPFLEUR: {
+    nom: 'Champfleur',
+    variantes: ['champfleur', 'Champfleur', 'CHAMPFLEUR']
+  },
+  ARCONNAY: {
+    nom: 'Arçonnay',
+    variantes: ['arconnay', 'Arconnay', 'ARCONNAY', 'arçonnay', 'Arçonnay', 'ARÇONNAY']
+  },
+  OISSEAU_LE_PETIT: {
+    nom: 'Oisseau-le-Petit',
+    variantes: ['oisseau-le-petit', 'Oisseau-le-Petit', 'OISSEAU-LE-PETIT', 'oisseau le petit', 'Oisseau le Petit', 'OISSEAU LE PETIT']
   }
 };
 

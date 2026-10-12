@@ -85,13 +85,27 @@ utiliser **4h/10h/16h UTC** en été (CEST, actuellement) ou **5h/11h/17h UTC** 
 (CET) — il faudra ajuster manuellement les tâches au changement d'heure (fin
 mars / fin octobre), cron-job.org ne gère pas le fuseau France automatiquement.
 
-Liste des 15 scrapers de vente actifs (valeur du paramètre `scraper`) :
+Liste des scrapers de vente actifs (valeur du paramètre `scraper`) :
 
 ```
 kermarrec, era, blot, carnot, penn, diard, century, bretilimmo,
 boyer, notaires-bretons, immobilier-notaires, acheter-louer,
-bien-ici, immonot, fnaim, laforet, square-habitat
+bien-ici, immonot, fnaim, laforet, square-habitat,
+la-francaise-immobiliere, nestenn, cornier-immobilier,
+ajp-immobilier, alternative-immobilier, iad-france, efficity,
+alc-immobilier, my-home-immobilier
 ```
+
+`alc-immobilier` et `my-home-immobilier` couvrent un second secteur (Fyé, Champfleur,
+Arçonnay, Oisseau-le-Petit — Sarthe/72, près d'Alençon), ajouté en plus du secteur
+Vitré/Châteaugiron. Les plateformes nationales déjà listées ci-dessus (era, century, fnaim,
+immobilier-notaires, immonot, iad-france, bien-ici, square-habitat) couvrent aussi ce second
+secteur via des entrées supplémentaires dans `VilleScraperParams` — pas de nouveau paramètre
+`scraper` pour elles. Laforêt n'a aucune page ville dédiée dans ce secteur (confirmé via leur
+sitemap officiel) ; Efficity (bloqué par Cloudflare) et Acheter-louer (semble avoir migré vers
+une appli Next.js qui ne rend plus les résultats côté serveur) y sont configurés mais
+actuellement non fonctionnels — pour ces deux-là, le problème touche aussi Vitré/Châteaugiron,
+donc ce n'est pas spécifique au nouveau secteur.
 
 Liste des 9 scrapers de location (appartements, table `AnnonceLocation` séparée) :
 
