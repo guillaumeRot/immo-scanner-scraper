@@ -78,9 +78,12 @@ async function scrapeDetailPage(url) {
 // Même structure ng-state pour la vente et la location : val.prix contient le loyer
 // mensuel quand la page est sous /louer/, pas besoin d'un scrapeDetailPage séparé.
 export const eraLocationScraper = async () => {
-  // Recherches de location volontairement limitées à Vitré (pas les autres villes
-  // couvertes côté vente).
-  const villeRows = (await getVilleParams("era")).filter((r) => r.nom === "Vitré");
+  // Recherches de location limitées au secteur Vitré/Châteaugiron — exclut le secteur
+  // Sarthe (Fyé/Champfleur/Arçonnay/Oisseau-le-Petit) ajouté plus tard côté vente, pour
+  // lequel aucune recherche location n'a été demandée.
+  const villeRows = (await getVilleParams("era")).filter((r) =>
+    ["Vitré", "Châteaugiron", "Brécé", "Servon-sur-Vilaine", "Noyal-sur-Vilaine", "Acigné", "Châteaubourg"].includes(r.nom)
+  );
   if (!villeRows.length) {
     console.warn("⚠️ ERA (location) - Aucune ville configurée en base");
     return;

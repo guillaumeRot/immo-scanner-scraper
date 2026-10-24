@@ -17,8 +17,14 @@ async function fetchHtml(url) {
 }
 
 // Le paramètre type_bien n'est pas respecté côté serveur (les résultats mélangent tous les
-// types) : le filtre par type/ville/budget se fait donc côté client, comme pour la vente.
-async function scrapeListPage(url, validTypes = ["maison", "immeuble"], maxBudget = 400000) {
+// types), et le paramètre localisation[] non plus (constaté : une recherche filtrée sur une
+// seule ville renvoie quand même un mélange de communes du secteur) : le filtre par
+// type/ville/budget se fait donc entièrement côté client, comme pour la vente.
+// validCitySlugs : fragments (pas le nom complet) servant à reconnaître chaque ville dans le
+// texte affiché, volontairement courts pour tolérer les coquilles côté site (constaté :
+// "Noyal sur Vialine" au lieu de "Noyal sur Vilaine" dans leurs propres données — le
+// fragment "noyal" reste correct dans les deux cas).
+async function scrapeListPage(url, validTypes = ["maison", "immeuble"], maxBudget = 400000, validCitySlugs = ["vitre"]) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
@@ -38,10 +44,10 @@ async function scrapeListPage(url, validTypes = ["maison", "immeuble"], maxBudge
     const prix = parseInt((priceMatch?.[1] || "0").replace(/\s/g, "")) || 0;
 
     const isValidType = validTypes.includes(typeSlug);
-    const isVitre = normalize(city).includes("vitre");
+    const isValidCity = validCitySlugs.some((slug) => normalize(city).includes(normalize(slug)));
     const isInBudget = prix <= maxBudget && prix > 0;
 
-    if (isValidType && isVitre && isInBudget) {
+    if (isValidType && isValidCity && isInBudget) {
       links.add(`https://bretilimmo.com${href}`);
     }
   });
@@ -85,14 +91,13 @@ async function scrapeDetailPage(url) {
 }
 
 export const bretilimmoLocationScraper = async () => {
-  // Recherches de location volontairement limitées à Vitré (pas les autres villes
-  // couvertes côté vente).
-  const villeRows = (await getVilleParams("bretilimmo")).filter((r) => r.nom === "Vitré");
+  const villeRows = await getVilleParams("bretilimmo");
   if (!villeRows.length) {
     console.warn("⚠️ Bretil'Immo (location) - Aucune ville configurée en base");
     return;
   }
   const locParams = villeRows.map(r => `localisation%5B%5D=${r.params.slug}`).join("&");
+  const validCitySlugs = villeRows.map((r) => r.params.slug);
   const LIST_URL =
     `https://bretilimmo.com/location?sort=&type_bien%5B%5D=appartement` +
     `&${locParams}&pieces=&chambres=&minBudget=&maxBudget=&minSurface=&maxSurface=&minTerrain=&maxTerrain=&reference=&submit=`;
@@ -103,7 +108,7 @@ export const bretilimmoLocationScraper = async () => {
   while (currentUrl) {
     console.log(`🔎 Bretil'Immo (location) - Page de liste : ${currentUrl}`);
     // Pas de plafond de budget pertinent pour un loyer ; on ne garde que le type "appartement"
-    const { links, nextUrl } = await scrapeListPage(currentUrl, ["appartement"], Infinity);
+    const { links, nextUrl } = await scrapeListPage(currentUrl, ["appartement"], Infinity, validCitySlugs);
     console.log(`📌 Bretil'Immo (location) - ${links.length} annonces trouvées.`);
 
     for (const url of links) {
@@ -148,6 +153,7 @@ export const bretilimmoScraper = async () => {
     return;
   }
   const locParams = villeRows.map(r => `localisation%5B%5D=${r.params.slug}`).join("&");
+  const validCitySlugs = villeRows.map((r) => r.params.slug);
   const LIST_URL =
     `https://bretilimmo.com/a-vendre?sort=&type_bien%5B%5D=immeuble&type_bien%5B%5D=maison-villa` +
     `&${locParams}&pieces=&chambres=&minBudget=&maxBudget=400000&minSurface=&maxSurface=&minTerrain=&maxTerrain=&reference=&submit=`;
@@ -157,7 +163,7 @@ export const bretilimmoScraper = async () => {
 
   while (currentUrl) {
     console.log(`🔎 Bretil'Immo - Page de liste : ${currentUrl}`);
-    const { links, nextUrl } = await scrapeListPage(currentUrl);
+    const { links, nextUrl } = await scrapeListPage(currentUrl, ["maison", "immeuble"], 400000, validCitySlugs);
     console.log(`📌 Bretil'Immo - ${links.length} annonces trouvées.`);
 
     for (const url of links) {

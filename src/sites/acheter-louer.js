@@ -109,9 +109,12 @@ async function scrapeDetailPage(url) {
 }
 
 export const acheterLouerLocationScraper = async () => {
-  // Recherches de location volontairement limitées à Vitré (pas les autres villes
-  // couvertes côté vente).
-  const villeRows = (await getVilleParams("acheter-louer")).filter((r) => r.nom === "Vitré");
+  // Recherches de location limitées au secteur Vitré/Châteaugiron — exclut le secteur
+  // Sarthe (Fyé/Champfleur/Arçonnay/Oisseau-le-Petit) ajouté plus tard côté vente, pour
+  // lequel aucune recherche location n'a été demandée.
+  const villeRows = (await getVilleParams("acheter-louer")).filter((r) =>
+    ["Vitré", "Châteaugiron", "Brécé", "Servon-sur-Vilaine", "Noyal-sur-Vilaine", "Acigné", "Châteaubourg"].includes(r.nom)
+  );
   if (!villeRows.length) {
     console.warn("⚠️ Acheter-louer (location) - Aucune ville configurée en base");
     return;

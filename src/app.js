@@ -1,8 +1,18 @@
 import 'dotenv/config';
 import express from 'express';
 import { waitUntil } from '@vercel/functions';
-import { initDb, updateScanTable, claimUnnotifiedVentes, claimUnnotifiedLocations, claimUnnotifiedErreurs, purgeOldErreurs, insertErreur } from './db.js';
-import { sendNewVentesEmail, sendNewLocationsEmail, sendErrorReportEmail } from './email.js';
+import {
+  initDb,
+  updateScanTable,
+  claimUnnotifiedErreurs,
+  purgeOldErreurs,
+  insertErreur,
+  getRecherchesActives,
+  getMaxAnnonceId,
+  getAnnoncesCorrespondantes,
+  mettreAJourCurseurRecherche,
+} from './db.js';
+import { sendRechercheAlerteEmail, sendErrorReportEmail } from './email.js';
 import { immonotScraper } from './sites/immonot.js';
 import { kermarrecScraper, kermarrecLocationScraper } from './sites/kermarrec.js';
 import { eraScraper, eraLocationScraper } from './sites/era.js';
@@ -169,20 +179,50 @@ app.get('/run-scrapers', async (req, res) => {
 });
 
 // Déclenchés par deux tâches cron-job.org séparées (indépendantes du rythme des
-// scrapers et l'une de l'autre) : chacune regarde s'il y a des annonces pas encore
-// notifiées pour son type et, si oui, envoie un seul email récapitulatif. Séparés en deux
-// endpoints distincts pour pouvoir mettre en pause les notifications de location (ou de
+// scrapers et l'une de l'autre) : pour chaque recherche sauvegardée active (comptes
+// utilisateurs, cf. docs/comptes-alertes.md dans scraper-immo), regarde s'il y a de
+// nouvelles annonces correspondant à ses critères depuis son dernier passage et, si oui,
+// envoie un email récapitulatif à l'utilisateur propriétaire de cette recherche. Séparés en
+// deux endpoints distincts pour pouvoir mettre en pause les notifications de location (ou de
 // vente) indépendamment, en désactivant simplement la tâche cron-job.org correspondante.
 // Prévoir un décalage dans le planning cron-job.org (ex: 15-20 min après le créneau de
 // scraping) pour laisser le temps à tous les scrapers du lot de terminer avant l'envoi.
+async function traiterNotificationsRecherches(typeTransaction) {
+  const recherches = await getRecherchesActives(typeTransaction);
+  const maxId = await getMaxAnnonceId(typeTransaction);
+
+  let recherchesNotifiees = 0;
+  let annoncesEnvoyees = 0;
+
+  for (const recherche of recherches) {
+    const annonces = await getAnnoncesCorrespondantes(recherche, typeTransaction);
+
+    if (annonces.length > 0) {
+      await sendRechercheAlerteEmail(recherche.email, recherche.nom, annonces, {
+        estLocation: typeTransaction === "location",
+      });
+      recherchesNotifiees += 1;
+      annoncesEnvoyees += annonces.length;
+    }
+
+    // Le curseur avance toujours jusqu'au dernier id scanné, même sans match : une annonce
+    // qui ne correspond à aucun critère ne doit pas être réexaminée à chaque passage.
+    await mettreAJourCurseurRecherche(recherche.id, typeTransaction, maxId);
+  }
+
+  return { recherches: recherches.length, recherchesNotifiees, annoncesEnvoyees };
+}
+
 app.get('/send-notifications-ventes', async (req, res) => {
   if (!checkAuth(req, res)) return;
 
   try {
     await initDb();
-    const ventes = await claimUnnotifiedVentes();
-    await sendNewVentesEmail(ventes);
-    res.json({ status: "done", message: `${ventes.length} vente(s) notifiée(s).` });
+    const resultat = await traiterNotificationsRecherches("vente");
+    res.json({
+      status: "done",
+      message: `${resultat.annoncesEnvoyees} vente(s) notifiée(s) sur ${resultat.recherchesNotifiees}/${resultat.recherches} recherche(s) active(s).`,
+    });
   } catch (e) {
     console.error("❌ Erreur dans /send-notifications-ventes:", e);
     res.status(500).json({ status: "error", message: e.message });
@@ -194,9 +234,11 @@ app.get('/send-notifications-locations', async (req, res) => {
 
   try {
     await initDb();
-    const locations = await claimUnnotifiedLocations();
-    await sendNewLocationsEmail(locations);
-    res.json({ status: "done", message: `${locations.length} location(s) notifiée(s).` });
+    const resultat = await traiterNotificationsRecherches("location");
+    res.json({
+      status: "done",
+      message: `${resultat.annoncesEnvoyees} location(s) notifiée(s) sur ${resultat.recherchesNotifiees}/${resultat.recherches} recherche(s) active(s).`,
+    });
   } catch (e) {
     console.error("❌ Erreur dans /send-notifications-locations:", e);
     res.status(500).json({ status: "error", message: e.message });

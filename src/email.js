@@ -50,43 +50,23 @@ function buildDigestHtml(titre, annonces, { estLocation }) {
 }
 
 /**
- * Envoie un email récapitulatif pour un lot de ventes nouvellement détectées.
- * Ne fait rien (et ne lève pas d'erreur) si le lot est vide.
+ * Envoie, à l'email d'un utilisateur, le récapitulatif des nouvelles annonces (vente ou
+ * location) correspondant à une de ses recherches sauvegardées (table RechercheAlerte, cf.
+ * docs/comptes-alertes.md dans scraper-immo). Ne fait rien si le lot est vide.
  */
-export async function sendNewVentesEmail(ventes) {
-  if (ventes.length === 0) return;
+export async function sendRechercheAlerteEmail(destinataire, nomRecherche, annonces, { estLocation }) {
+  if (annonces.length === 0) return;
 
-  const dest = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER;
-  const sujet = `🏠 ${ventes.length} nouvelle${ventes.length > 1 ? "s" : ""} vente${ventes.length > 1 ? "s" : ""}`;
+  const sujet = `${estLocation ? "🔑" : "🏠"} ${annonces.length} nouvelle${annonces.length > 1 ? "s" : ""} annonce${annonces.length > 1 ? "s" : ""} — ${nomRecherche}`;
 
   await getTransporter().sendMail({
     from: `"Immo Scanner" <${process.env.GMAIL_USER}>`,
-    to: dest,
+    to: destinataire,
     subject: sujet,
-    html: buildDigestHtml(sujet, ventes, { estLocation: false }),
+    html: buildDigestHtml(sujet, annonces, { estLocation }),
   });
 
-  console.log(`✅ Email envoyé (${ventes.length} vente(s)) à ${dest}`);
-}
-
-/**
- * Envoie un email récapitulatif pour un lot de locations nouvellement détectées.
- * Ne fait rien (et ne lève pas d'erreur) si le lot est vide.
- */
-export async function sendNewLocationsEmail(locations) {
-  if (locations.length === 0) return;
-
-  const dest = process.env.NOTIFY_EMAIL || process.env.GMAIL_USER;
-  const sujet = `🔑 ${locations.length} nouvelle${locations.length > 1 ? "s" : ""} location${locations.length > 1 ? "s" : ""}`;
-
-  await getTransporter().sendMail({
-    from: `"Immo Scanner" <${process.env.GMAIL_USER}>`,
-    to: dest,
-    subject: sujet,
-    html: buildDigestHtml(sujet, locations, { estLocation: true }),
-  });
-
-  console.log(`✅ Email envoyé (${locations.length} location(s)) à ${dest}`);
+  console.log(`✅ Email envoyé (${annonces.length} annonce(s), recherche "${nomRecherche}") à ${destinataire}`);
 }
 
 function erreurRowHtml(e) {

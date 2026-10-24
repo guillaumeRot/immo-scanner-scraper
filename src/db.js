@@ -161,22 +161,15 @@ async function ensureTablesExists() {
       params JSONB NOT NULL,
       UNIQUE(ville_id, scraper)
     );
-
-    -- Pilotée depuis un autre projet (front) qui lit/écrit directement cette table :
-    -- décide, par ville et par type de transaction, si une annonce doit déclencher un
-    -- email via /send-notifications-ventes et /send-notifications-locations. N'affecte
-    -- ni le scraping ni le stockage (Annonce/AnnonceLocation) — uniquement l'envoi.
-    CREATE TABLE IF NOT EXISTS "NotificationPreferences" (
-      id SERIAL PRIMARY KEY,
-      ville_id INTEGER NOT NULL REFERENCES "Villes"(id) ON DELETE CASCADE,
-      type_transaction VARCHAR(10) NOT NULL CHECK (type_transaction IN ('vente', 'location')),
-      actif BOOLEAN DEFAULT TRUE,
-      UNIQUE(ville_id, type_transaction)
-    );
   `;
 
+  // "User" et "RechercheAlerte" (comptes + recherches sauvegardées avec alertes email, cf.
+  // docs/comptes-alertes.md dans scraper-immo) sont créées et gérées côté scraper-immo via
+  // Prisma, pas ici — ce projet se contente de les lire (getRecherchesActives) et d'y écrire
+  // le curseur de notification (mettreAJourCurseurRecherche).
+
   await pool.query(createVillesTableQuery);
-  console.log("✅ Tables 'Villes', 'VilleScraperParams' et 'NotificationPreferences' vérifiées/créées");
+  console.log("✅ Tables 'Villes' et 'VilleScraperParams' vérifiées/créées");
 
   await seedVilles();
 }
@@ -210,18 +203,6 @@ async function seedVilles() {
   const arconnay          = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Arçonnay'`)).rows[0].id;
   const oisseauLePetit    = (await pool.query(`SELECT id FROM "Villes" WHERE nom = 'Oisseau-le-Petit'`)).rows[0].id;
 
-  // Préférences de notification par défaut : tout actif (comportement inchangé tant que
-  // rien n'est désactivé depuis le front qui pilote cette table). ON CONFLICT DO NOTHING
-  // pour ne jamais écraser un choix déjà fait.
-  for (const villeId of [vitre, chateaugiron, brece, servonSurVilaine, noyalSurVilaine, acigne, chateaubourg, fye, champfleur, arconnay, oisseauLePetit]) {
-    for (const type of ["vente", "location"]) {
-      await pool.query(
-        `INSERT INTO "NotificationPreferences" (ville_id, type_transaction) VALUES ($1, $2) ON CONFLICT (ville_id, type_transaction) DO NOTHING`,
-        [villeId, type]
-      );
-    }
-  }
-
   const entries = [
     [vitre,        "acheter-louer",       { loc: "vitre",             cityZip: "35500" }],
     [chateaugiron, "acheter-louer",       { loc: "chateaugiron",      cityZip: "35410" }],
@@ -237,6 +218,10 @@ async function seedVilles() {
     [chateaugiron, "blot",                { nom_input: "Chateaugiron", label: "CHATEAUGIRON (35410)" }],
     [vitre,        "boyer",               { C_65: "35500+VITRE" }],
     [vitre,        "bretilimmo",          { slug: "vitre" }],
+    // "noyal" (pas le nom complet) : fragment volontairement court pour matcher le texte
+    // affiché même avec la coquille déjà constatée côté site ("Noyal sur Vialine" au lieu
+    // de "Noyal sur Vilaine") — cf. commentaire dans bretilimmo.js.
+    [noyalSurVilaine, "bretilimmo",       { slug: "noyal" }],
     [vitre,        "carnot",              { slug: "vitre-35500" }],
     [vitre,        "diard",               { C_65: "35500 VITRE" }],
     [chateaugiron, "diard",               { C_65: "35410 CHATEAUGIRON" }],
@@ -445,7 +430,8 @@ export const VILLES = {
   },
   NOYAL_SUR_VILAINE: {
     nom: 'Noyal-sur-Vilaine',
-    variantes: ['noyal-sur-vilaine', 'Noyal-sur-Vilaine', 'NOYAL-SUR-VILAINE', 'noyal sur vilaine', 'NOYAL SUR VILAINE']
+    // "vialine" : coquille constatée dans les données de Bretil'Immo ("Noyal sur Vialine").
+    variantes: ['noyal-sur-vilaine', 'Noyal-sur-Vilaine', 'NOYAL-SUR-VILAINE', 'noyal sur vilaine', 'NOYAL SUR VILAINE', 'noyal sur vialine', 'Noyal sur Vialine', 'NOYAL SUR VIALINE']
   },
   ACIGNE: {
     nom: 'Acigné',
@@ -956,50 +942,107 @@ export async function updateScanTable(scraper, startTime) {
   }
 }
 
+// --- Recherches sauvegardées (comptes utilisateurs) — cf. docs/comptes-alertes.md dans
+// scraper-immo. Les tables "User"/"RechercheAlerte" sont créées et gérées par ce projet
+// (Prisma, source de vérité du schéma) ; ce fichier ne fait que les lire/mettre à jour.
+//
+// Remplace l'ancien système claimUnnotifiedVentes/Locations (flag global "notifie" + toggle
+// par ville dans NotificationPreferences, supprimé). Chaque recherche a son propre curseur
+// (dernier_annonce_id_vente/location) : à chaque passage, on ne regarde que les annonces
+// plus récentes que ce curseur, filtrées par les critères de la recherche, puis le curseur
+// avance jusqu'au dernier id de la table (pas seulement jusqu'au dernier id matché) pour ne
+// jamais réexaminer deux fois une annonce qui n'a matché aucun critère.
+
 /**
- * Réclame atomiquement toutes les ventes pas encore notifiées : les marque notifie=true
- * au même moment que la lecture (UPDATE ... RETURNING), pour qu'un appel concurrent ne
- * puisse jamais récupérer les mêmes lignes deux fois. Séparé de claimUnnotifiedLocations
- * pour permettre de mettre en pause les notifications de location indépendamment
- * (cron-job.org : deux tâches distinctes plutôt qu'une seule combinée).
- *
- * Toutes les lignes non notifiées sont réclamées (marquées notifie=true) pour ne jamais
- * s'accumuler, mais seules celles dont la ville a la préférence "vente" active dans
- * NotificationPreferences (pilotée par un autre projet/front) sont retournées pour
- * déclencher un email — une ville désactivée est donc réclamée en silence, pas ignorée.
+ * Recherches actives pour un type de transaction donné ('vente' ou 'location'), avec
+ * l'email du propriétaire (jointure sur User).
  */
-export async function claimUnnotifiedVentes() {
+export async function getRecherchesActives(typeTransaction) {
   if (!pool) throw new Error("Pool non initialisé");
+  const champ = typeTransaction === "vente" ? "vente" : "location";
   const res = await pool.query(`
-    WITH claimed AS (
-      UPDATE "Annonce" SET notifie = TRUE WHERE notifie = FALSE RETURNING *
-    )
-    SELECT claimed.*
-    FROM claimed
-    LEFT JOIN "Villes" v ON v.nom = claimed.ville
-    LEFT JOIN "NotificationPreferences" np ON np.ville_id = v.id AND np.type_transaction = 'vente'
-    WHERE COALESCE(np.actif, TRUE) = TRUE
+    SELECT r.*, u.email
+    FROM "RechercheAlerte" r
+    JOIN "User" u ON u.id = r.user_id
+    WHERE r.actif = TRUE AND r.${champ} = TRUE
   `);
   return res.rows;
 }
 
-/**
- * Réclame atomiquement toutes les locations pas encore notifiées (cf. claimUnnotifiedVentes
- * pour le fonctionnement du filtre NotificationPreferences).
- */
-export async function claimUnnotifiedLocations() {
+/** Dernier id en base pour la table concernée — sert à faire avancer le curseur d'une
+ * recherche jusqu'au bout du scan, même quand rien n'a matché ses critères. */
+export async function getMaxAnnonceId(typeTransaction) {
   if (!pool) throw new Error("Pool non initialisé");
-  const res = await pool.query(`
-    WITH claimed AS (
-      UPDATE "AnnonceLocation" SET notifie = TRUE WHERE notifie = FALSE RETURNING *
-    )
-    SELECT claimed.*
-    FROM claimed
-    LEFT JOIN "Villes" v ON v.nom = claimed.ville
-    LEFT JOIN "NotificationPreferences" np ON np.ville_id = v.id AND np.type_transaction = 'location'
-    WHERE COALESCE(np.actif, TRUE) = TRUE
-  `);
+  const table = typeTransaction === "vente" ? "Annonce" : "AnnonceLocation";
+  const res = await pool.query(`SELECT COALESCE(MAX(id), 0) AS max FROM "${table}"`);
+  return res.rows[0].max;
+}
+
+// Regex réutilisée pour ne caster en numeric que des valeurs sûres (prix/surface/loyer sont
+// stockés en VARCHAR côté scraping, cf. Annonce/AnnonceLocation) — une valeur non conforme
+// (vide, texte) est traitée comme "non comparable" plutôt que de faire échouer la requête.
+const NUMERIC_PATTERN = "^[0-9]+(\\.[0-9]+)?$";
+
+function buildMatchQuery(table, recherche, idColumn, prixColumn) {
+  const conditions = [`id > $1`, `(notifie IS NOT TRUE)`];
+  const params = [recherche[idColumn] ?? 0];
+  let i = 2;
+
+  if (recherche.villes?.length > 0) {
+    conditions.push(`ville = ANY($${i++})`);
+    params.push(recherche.villes);
+  }
+  if (recherche.types_bien?.length > 0) {
+    // ILIKE ANY plutôt qu'une égalité stricte : le champ "type" scrapé varie parfois dans sa
+    // formulation exacte selon l'agence (ex. "Location Appartement" au lieu d'"Appartement").
+    conditions.push(`type ILIKE ANY($${i++})`);
+    params.push(recherche.types_bien.map((t) => `%${t}%`));
+  }
+  if (recherche.dpe_lettres?.length > 0) {
+    conditions.push(`dpe = ANY($${i++})`);
+    params.push(recherche.dpe_lettres);
+  }
+  if (recherche.prix_min != null) {
+    conditions.push(`${prixColumn} ~ '${NUMERIC_PATTERN}' AND ${prixColumn}::numeric >= $${i++}`);
+    params.push(recherche.prix_min);
+  }
+  if (recherche.prix_max != null) {
+    conditions.push(`${prixColumn} ~ '${NUMERIC_PATTERN}' AND ${prixColumn}::numeric <= $${i++}`);
+    params.push(recherche.prix_max);
+  }
+  if (recherche.surface_min != null) {
+    conditions.push(`surface ~ '${NUMERIC_PATTERN}' AND surface::numeric >= $${i++}`);
+    params.push(recherche.surface_min);
+  }
+  if (recherche.surface_max != null) {
+    conditions.push(`surface ~ '${NUMERIC_PATTERN}' AND surface::numeric <= $${i++}`);
+    params.push(recherche.surface_max);
+  }
+
+  return { sql: `SELECT * FROM "${table}" WHERE ${conditions.join(" AND ")} ORDER BY id ASC`, params };
+}
+
+/** Annonces (vente ou location) correspondant aux critères d'une recherche, parues depuis
+ * son dernier curseur. */
+export async function getAnnoncesCorrespondantes(recherche, typeTransaction) {
+  if (!pool) throw new Error("Pool non initialisé");
+  const isVente = typeTransaction === "vente";
+  const table = isVente ? "Annonce" : "AnnonceLocation";
+  const idColumn = isVente ? "dernier_annonce_id_vente" : "dernier_annonce_id_location";
+  const prixColumn = isVente ? "prix" : "loyer";
+
+  const { sql, params } = buildMatchQuery(table, recherche, idColumn, prixColumn);
+  const res = await pool.query(sql, params);
   return res.rows;
+}
+
+export async function mettreAJourCurseurRecherche(rechercheId, typeTransaction, dernierId) {
+  if (!pool) throw new Error("Pool non initialisé");
+  const champ = typeTransaction === "vente" ? "dernier_annonce_id_vente" : "dernier_annonce_id_location";
+  await pool.query(
+    `UPDATE "RechercheAlerte" SET ${champ} = $1, updated_at = NOW() WHERE id = $2`,
+    [dernierId, rechercheId]
+  );
 }
 
 /**
