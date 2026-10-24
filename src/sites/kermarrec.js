@@ -105,6 +105,8 @@ async function scrapeLocationDetailPage(url) {
 
   const surface = parseFloat(surfaceText.replace(/[^0-9,.]/g, "").replace(",", ".")) || 0;
   const pieces = typologie.match(/(\d+)\s*pi[èe]ce/i)?.[1] ? parseInt(typologie.match(/(\d+)\s*pi[èe]ce/i)[1]) : 0;
+  // La typologie commence par le type de bien ("Maison 4 pièces", "Appartement 3 pièces").
+  const type = /^maison/i.test(typologie) ? "Maison" : "Appartement";
 
   const description = $("#description p").first().text().trim();
 
@@ -117,7 +119,7 @@ async function scrapeLocationDetailPage(url) {
   const dpe = $(".emission-diagram .diag_selected .diag_letter").first().text().trim();
   const ges = $(".diag_ges .diag_selected .diag_letter").first().text().trim();
 
-  return { loyer, ville, surface, pieces, description, photos, dpe, ges };
+  return { loyer, ville, surface, pieces, type, description, photos, dpe, ges };
 }
 
 export const kermarrecLocationScraper = async () => {
@@ -133,49 +135,51 @@ export const kermarrecLocationScraper = async () => {
   }
   const primary = villeRows.find(r => r.params.is_primary) || villeRows[villeRows.length - 1];
   const villeParams = villeRows.map(r => `ville%5B%5D=${r.params.slug}`).join("&");
-  const LIST_URL =
-    `${BASE_URL}/location/appartement/?post_type=location&false-select=on&1d04ea34=${primary.params.nom}` +
-    `&${villeParams}&reference=&rayon=0&avec_carte=false&tri=pertinence`;
 
   const liensActuels = [];
-  let currentUrl = LIST_URL;
 
-  while (currentUrl) {
-    console.log(`🔎 Kermarrec (location) - Page de liste : ${currentUrl}`);
-    const { links, nextUrl } = await scrapeListPage(currentUrl);
-    console.log(`📌 Kermarrec (location) - ${links.length} annonces trouvées.`);
+  for (const typeSlug of ["appartement", "maison"]) {
+    let currentUrl =
+      `${BASE_URL}/location/${typeSlug}/?post_type=location&false-select=on&1d04ea34=${primary.params.nom}` +
+      `&${villeParams}&reference=&rayon=0&avec_carte=false&tri=pertinence`;
 
-    for (const url of links) {
-      try {
-        console.log(`📄 Kermarrec (location) - Page détail : ${url}`);
-        const data = await scrapeLocationDetailPage(url);
+    while (currentUrl) {
+      console.log(`🔎 Kermarrec (location) - Page de liste (${typeSlug}) : ${currentUrl}`);
+      const { links, nextUrl } = await scrapeListPage(currentUrl);
+      console.log(`📌 Kermarrec (location) - ${links.length} annonces trouvées (${typeSlug}).`);
 
-        if (data.ville && data.loyer) {
-          await insertAnnonceLocation({
-            type: "Appartement",
-            loyer: data.loyer,
-            ville: data.ville,
-            pieces: data.pieces,
-            surface: data.surface,
-            description: data.description,
-            photos: data.photos,
-            dpe: data.dpe,
-            ges: data.ges,
-            agence: "Kermarrec",
-            lien: url,
-          });
-          liensActuels.push(url);
-        } else {
-          console.warn(`⚠️ Kermarrec (location) - Données incomplètes pour ${url}`);
-          await insertErreur("Kermarrec (location)", url, "Données incomplètes (ville ou loyer manquant)");
+      for (const url of links) {
+        try {
+          console.log(`📄 Kermarrec (location) - Page détail : ${url}`);
+          const data = await scrapeLocationDetailPage(url);
+
+          if (data.ville && data.loyer) {
+            await insertAnnonceLocation({
+              type: data.type,
+              loyer: data.loyer,
+              ville: data.ville,
+              pieces: data.pieces,
+              surface: data.surface,
+              description: data.description,
+              photos: data.photos,
+              dpe: data.dpe,
+              ges: data.ges,
+              agence: "Kermarrec",
+              lien: url,
+            });
+            liensActuels.push(url);
+          } else {
+            console.warn(`⚠️ Kermarrec (location) - Données incomplètes pour ${url}`);
+            await insertErreur("Kermarrec (location)", url, "Données incomplètes (ville ou loyer manquant)");
+          }
+        } catch (err) {
+          console.error(`❌ Kermarrec (location) - Erreur sur ${url}:`, err.message);
+          await insertErreur("Kermarrec (location)", url, String(err));
         }
-      } catch (err) {
-        console.error(`❌ Kermarrec (location) - Erreur sur ${url}:`, err.message);
-        await insertErreur("Kermarrec (location)", url, String(err));
       }
-    }
 
-    currentUrl = nextUrl;
+      currentUrl = nextUrl;
+    }
   }
 
   await deleteMissingAnnoncesLocation("Kermarrec", Array.from(new Set(liensActuels)));

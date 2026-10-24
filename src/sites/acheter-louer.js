@@ -122,40 +122,50 @@ export const acheterLouerLocationScraper = async () => {
 
   const liensActuels = [];
 
-  for (const row of villeRows) {
-    const LIST_URL = `${BASE_URL}/annonces/immobilier/location-appartement-${row.params.loc}`;
-    console.log(`🔎 Acheter-louer (location) - Page de liste : ${LIST_URL}`);
-    const links = await scrapeLocationListPage(LIST_URL, [row.params.loc]);
-    console.log(`📌 Acheter-louer (location) - ${links.length} annonces trouvées.`);
+  // Site actuellement en panne (migration Next.js, cf. résumé donné à l'utilisateur) : le
+  // chemin "location-maison-" n'a pas pu être vérifié en direct, par symétrie avec
+  // "location-appartement-" déjà en place — à confirmer quand le site sera de nouveau lisible.
+  const CATEGORIES = [
+    { slug: "appartement", type: "Appartement" },
+    { slug: "maison", type: "Maison" },
+  ];
 
-    for (const url of links) {
-      try {
-        console.log(`📄 Acheter-louer (location) - Page détail : ${url}`);
-        const data = await scrapeDetailPage(url);
-        if (data.ville && data.prix) {
-          await insertAnnonceLocation({
-            type: "Appartement",
-            loyer: data.prix,
-            ville: data.ville,
-            pieces: data.pieces,
-            surface: data.surface,
-            description: data.description,
-            photos: data.photos,
-            dpe: data.dpe,
-            ges: data.ges,
-            agence: "Acheter-louer",
-            lien: url,
-          });
-          liensActuels.push(url);
-        } else {
-          console.warn(`⚠️ Acheter-louer (location) - Données incomplètes pour ${url}`);
-          await insertErreur("Acheter-louer (location)", url, "Données incomplètes (ville ou loyer manquant)");
+  for (const row of villeRows) {
+    for (const { slug: categorieSlug, type: categorieType } of CATEGORIES) {
+      const LIST_URL = `${BASE_URL}/annonces/immobilier/location-${categorieSlug}-${row.params.loc}`;
+      console.log(`🔎 Acheter-louer (location) - Page de liste (${categorieSlug}) : ${LIST_URL}`);
+      const links = await scrapeLocationListPage(LIST_URL, [row.params.loc]);
+      console.log(`📌 Acheter-louer (location) - ${links.length} annonces trouvées (${categorieSlug}).`);
+
+      for (const url of links) {
+        try {
+          console.log(`📄 Acheter-louer (location) - Page détail : ${url}`);
+          const data = await scrapeDetailPage(url);
+          if (data.ville && data.prix) {
+            await insertAnnonceLocation({
+              type: categorieType,
+              loyer: data.prix,
+              ville: data.ville,
+              pieces: data.pieces,
+              surface: data.surface,
+              description: data.description,
+              photos: data.photos,
+              dpe: data.dpe,
+              ges: data.ges,
+              agence: "Acheter-louer",
+              lien: url,
+            });
+            liensActuels.push(url);
+          } else {
+            console.warn(`⚠️ Acheter-louer (location) - Données incomplètes pour ${url}`);
+            await insertErreur("Acheter-louer (location)", url, "Données incomplètes (ville ou loyer manquant)");
+          }
+        } catch (err) {
+          console.error(`❌ Acheter-louer (location) - Erreur sur ${url}: ${err.message}`);
+          await insertErreur("Acheter-louer (location)", url, String(err));
         }
-      } catch (err) {
-        console.error(`❌ Acheter-louer (location) - Erreur sur ${url}: ${err.message}`);
-        await insertErreur("Acheter-louer (location)", url, String(err));
+        await new Promise(r => setTimeout(r, 500));
       }
-      await new Promise(r => setTimeout(r, 500));
     }
   }
 

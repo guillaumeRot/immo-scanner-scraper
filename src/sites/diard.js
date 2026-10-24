@@ -9,12 +9,21 @@ const BASE_LIST_URL =
   `&C_30_MAX=400000&C_30_search=COMPRIS&C_30_type=NUMBER` +
   `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
 
-// Location : C_27=1 (Appartement, cf. options du formulaire), pas de plafond de budget
-const BASE_LIST_URL_LOCATION =
-  `${BASE_URL}/catalog/advanced_search_result.php?action=update_search` +
-  `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Location` +
-  `&C_27_search=EGAL&C_27_type=UNIQUE&C_27=1` +
-  `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
+// Location : pas de plafond de budget. C_27 est en EGAL/UNIQUE (pas de CONTIENT comme C_65)
+// donc une seule valeur à la fois — une requête par type (1=Appartement, 2=Maison, cf.
+// options du formulaire), fusionnées côté scraper plutôt qu'une seule requête combinée.
+const TYPES_LOCATION = [
+  { C_27: "1", label: "appartement" },
+  { C_27: "2", label: "maison" },
+];
+function buildListUrlLocation(c27) {
+  return (
+    `${BASE_URL}/catalog/advanced_search_result.php?action=update_search` +
+    `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Location` +
+    `&C_27_search=EGAL&C_27_type=UNIQUE&C_27=${c27}` +
+    `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`
+  );
+}
 
 const HEADERS = {
   "User-Agent":
@@ -160,7 +169,11 @@ async function scrapeLocationDetailPage(url) {
   const dpe = getCritere("Consommation énergie primaire") || null;
   const ges = getCritere("Gaz Effet de Serre") || null;
   const description = $(".products-description").first().text().trim();
-  const type = "Appartement";
+  // Même gabarit de page que la vente, mais la casse du titre varie ("MAISON"/"Maison") et
+  // certaines fiches commencent par un sous-type ("STUDIO") plutôt que le type de bien : on
+  // ne distingue que Maison vs tout le reste, comme les autres scrapers location du projet.
+  const titleFirstWord = $("h1.product-title").first().text().trim().split(/\s+/)[0] || "";
+  const type = /^maison$/i.test(titleFirstWord) ? "Maison" : "Appartement";
 
   const photos = [];
   $(".container-slider-product img[src*='pr_p']").each((_, el) => {
@@ -187,67 +200,69 @@ export const diardLocationScraper = async () => {
   const scraperStart = Date.now();
   let scrapeIncomplete = false;
 
-  villeLoop:
+  scanLoop:
   for (const row of villeRows) {
-    let currentUrl = BASE_LIST_URL_LOCATION + encodeURIComponent(row.params.C_65);
+    for (const { C_27, label } of TYPES_LOCATION) {
+      let currentUrl = buildListUrlLocation(C_27) + encodeURIComponent(row.params.C_65);
 
-    while (currentUrl) {
-      if (Date.now() - scraperStart > BUDGET_MS) {
-        console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
-        await insertErreur("Diard (location)", currentUrl, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
-        scrapeIncomplete = true;
-        break villeLoop;
-      }
-      console.log(`🔎 Diard (location) - Page de liste : ${currentUrl}`);
-      let links, nextUrl;
-      try {
-        ({ links, nextUrl } = await scrapeListPage(currentUrl));
-      } catch (err) {
-        if (!err.isRetryable) throw err; // vraie erreur HTTP (500...) : on laisse remonter, pas de faux succès
-        console.error(`❌ Diard (location) - Échec persistant sur la page de liste ${currentUrl}: ${err.message}`);
-        await insertErreur("Diard (location)", currentUrl, String(err));
-        scrapeIncomplete = true;
-        break; // on passe à la ville suivante plutôt que de planter tout le scraper
-      }
-      console.log(`📌 Diard (location) - ${links.length} annonces trouvées.`);
-
-      for (const url of links) {
+      while (currentUrl) {
         if (Date.now() - scraperStart > BUDGET_MS) {
           console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
-          await insertErreur("Diard (location)", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
+          await insertErreur("Diard (location)", currentUrl, `Budget de temps dépassé (run incomplet) — ${row.nom} (${label})`);
           scrapeIncomplete = true;
-          break villeLoop;
+          break scanLoop;
         }
+        console.log(`🔎 Diard (location) - Page de liste (${label}) : ${currentUrl}`);
+        let links, nextUrl;
         try {
-          console.log(`📄 Diard (location) - Page détail : ${url}`);
-          const data = await scrapeLocationDetailPage(url);
-
-          if (data.ville && data.loyer) {
-            await insertAnnonceLocation({
-              type: data.type,
-              loyer: data.loyer,
-              ville: data.ville,
-              pieces: data.pieces,
-              surface: data.surface,
-              description: data.description,
-              photos: data.photos,
-              dpe: data.dpe,
-              ges: data.ges,
-              agence: "Diard",
-              lien: url,
-            });
-            liensActuels.push(url);
-          } else {
-            console.warn(`⚠️ Diard (location) - Données incomplètes pour ${url}`);
-            await insertErreur("Diard (location)", url, "Données incomplètes (ville ou loyer manquant)");
-          }
+          ({ links, nextUrl } = await scrapeListPage(currentUrl));
         } catch (err) {
-          console.error(`❌ Diard (location) - Erreur sur ${url}:`, err.message);
-          await insertErreur("Diard (location)", url, String(err));
+          if (!err.isRetryable) throw err; // vraie erreur HTTP (500...) : on laisse remonter, pas de faux succès
+          console.error(`❌ Diard (location) - Échec persistant sur la page de liste ${currentUrl}: ${err.message}`);
+          await insertErreur("Diard (location)", currentUrl, String(err));
+          scrapeIncomplete = true;
+          break; // on passe au type/ville suivant plutôt que de planter tout le scraper
         }
-      }
+        console.log(`📌 Diard (location) - ${links.length} annonces trouvées (${label}).`);
 
-      currentUrl = nextUrl;
+        for (const url of links) {
+          if (Date.now() - scraperStart > BUDGET_MS) {
+            console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
+            await insertErreur("Diard (location)", url, `Budget de temps dépassé (run incomplet) — ${row.nom} (${label})`);
+            scrapeIncomplete = true;
+            break scanLoop;
+          }
+          try {
+            console.log(`📄 Diard (location) - Page détail : ${url}`);
+            const data = await scrapeLocationDetailPage(url);
+
+            if (data.ville && data.loyer) {
+              await insertAnnonceLocation({
+                type: data.type,
+                loyer: data.loyer,
+                ville: data.ville,
+                pieces: data.pieces,
+                surface: data.surface,
+                description: data.description,
+                photos: data.photos,
+                dpe: data.dpe,
+                ges: data.ges,
+                agence: "Diard",
+                lien: url,
+              });
+              liensActuels.push(url);
+            } else {
+              console.warn(`⚠️ Diard (location) - Données incomplètes pour ${url}`);
+              await insertErreur("Diard (location)", url, "Données incomplètes (ville ou loyer manquant)");
+            }
+          } catch (err) {
+            console.error(`❌ Diard (location) - Erreur sur ${url}:`, err.message);
+            await insertErreur("Diard (location)", url, String(err));
+          }
+        }
+
+        currentUrl = nextUrl;
+      }
     }
   }
 

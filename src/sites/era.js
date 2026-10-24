@@ -72,7 +72,7 @@ async function scrapeDetailPage(url) {
   const dpe = $(".performance.dpe li.on").first().text().trim();
   const ges = $(".performance.ges li.on").first().text().trim();
 
-  return { type: title.replace("Vente", "").trim(), prix, ville, surface: 0, pieces: 0, chambres: 0, description, photos, dpe, ges };
+  return { type: title.replace(/^(Vente|Location)\s*/i, "").trim(), prix, ville, surface: 0, pieces: 0, chambres: 0, description, photos, dpe, ges };
 }
 
 // Même structure ng-state pour la vente et la location : val.prix contient le loyer
@@ -89,7 +89,7 @@ export const eraLocationScraper = async () => {
     return;
   }
   const cities = villeRows.map(r => r.params.era_id).join(",");
-  const LIST_URL = `${BASE_URL}/louer/${cities}?page=1&type_bien=appartement&display=list`;
+  const LIST_URL = `${BASE_URL}/louer/${cities}?page=1&type_bien=appartement,maison&display=list`;
 
   const liensActuels = [];
   let currentUrl = LIST_URL;

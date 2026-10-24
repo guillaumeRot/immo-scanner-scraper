@@ -50,7 +50,11 @@ async function scrapeDetailPage(url) {
   const pieces = parseInt(getAdditionalDetail("Nombre de pièces")) || chambres + 1;
 
   const description = $(".rh_property__content .rh_content").first().text().trim();
-  const type = description.split(/[\n\r]/)[0]?.trim().split(" ")[0] || "Non spécifié";
+  // Le premier mot de la description varie trop (ex. appartements: "Studio", "T1", "T3"...)
+  // pour servir de type fiable : on ne distingue que Maison vs tout le reste (comme les
+  // autres scrapers de ce projet), via le mot "Maison" en tête de la 1re ligne.
+  const firstLine = description.split(/[\n\r]/)[0]?.trim() || "";
+  const type = /\bmaison\b/i.test(firstLine) ? "Maison" : "Appartement";
 
   const dpeMatch = ($("#bloc-energies #dpe .details-dpe").attr("class") || "").match(/dpe-([A-G])/);
   const gesMatch = ($("#bloc-energies #ges .details-ges").attr("class") || "").match(/ges-([A-G])/);
@@ -89,7 +93,7 @@ export const carnotLocationScraper = async () => {
   const liensActuels = [];
 
   for (const row of villeRows) {
-    let currentUrl = `https://www.carnotimmo.com/recherche-de-bien/?status=location&type%5B%5D=appartement&location=${row.params.slug}`;
+    let currentUrl = `https://www.carnotimmo.com/recherche-de-bien/?status=location&type%5B%5D=appartement&type%5B%5D=maison&location=${row.params.slug}`;
 
     while (currentUrl) {
       console.log(`🔎 Carnot (location) - Page de liste : ${currentUrl}`);
@@ -103,7 +107,7 @@ export const carnotLocationScraper = async () => {
 
           if (data.ville && data.prix) {
             await insertAnnonceLocation({
-              type: "Appartement",
+              type: data.type,
               loyer: data.prix,
               ville: data.ville,
               pieces: data.pieces,

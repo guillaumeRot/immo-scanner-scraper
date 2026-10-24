@@ -74,45 +74,49 @@ export const notairesBretonsLocationScraper = async () => {
 
   const liensActuels = [];
 
-  for (const row of villeRows) {
-    let currentUrl = `${BASE_URL}/biens/location/appartement/${row.params.slug}?display-mode=list`;
+  // Catégories distinctes côté URL (contrairement à la vente, "appartement,maison-individuelle"
+  // combiné en un seul chemin ne renvoie que les appartements côté location — testé séparément).
+  for (const categorie of ["appartement", "maison-individuelle"]) {
+    for (const row of villeRows) {
+      let currentUrl = `${BASE_URL}/biens/location/${categorie}/${row.params.slug}?display-mode=list`;
 
-    while (currentUrl) {
-      console.log(`🔎 Notaires Bretons (location) - Page de liste : ${currentUrl}`);
-      const { links, nextUrl } = await scrapeListPage(currentUrl);
-      console.log(`📌 Notaires Bretons (location) - ${links.length} annonces trouvées.`);
+      while (currentUrl) {
+        console.log(`🔎 Notaires Bretons (location) - Page de liste (${categorie}) : ${currentUrl}`);
+        const { links, nextUrl } = await scrapeListPage(currentUrl);
+        console.log(`📌 Notaires Bretons (location) - ${links.length} annonces trouvées (${categorie}).`);
 
-      for (const url of links) {
-        try {
-          console.log(`📄 Notaires Bretons (location) - Page détail : ${url}`);
-          const data = await scrapeDetailPage(url);
+        for (const url of links) {
+          try {
+            console.log(`📄 Notaires Bretons (location) - Page détail : ${url}`);
+            const data = await scrapeDetailPage(url);
 
-          if (data.ville && data.prix) {
-            await insertAnnonceLocation({
-              type: "Appartement",
-              loyer: data.prix,
-              ville: data.ville,
-              pieces: data.pieces,
-              surface: data.surface,
-              description: data.description,
-              photos: data.photos,
-              dpe: data.dpe,
-              ges: data.ges,
-              agence: "Notaires et Bretons",
-              lien: url,
-            });
-            liensActuels.push(url);
-          } else {
-            console.warn(`⚠️ Notaires Bretons (location) - Données incomplètes pour ${url}`);
-            await insertErreur("Notaires et Bretons (location)", url, "Données incomplètes (ville ou loyer manquant)");
+            if (data.ville && data.prix) {
+              await insertAnnonceLocation({
+                type: data.type,
+                loyer: data.prix,
+                ville: data.ville,
+                pieces: data.pieces,
+                surface: data.surface,
+                description: data.description,
+                photos: data.photos,
+                dpe: data.dpe,
+                ges: data.ges,
+                agence: "Notaires et Bretons",
+                lien: url,
+              });
+              liensActuels.push(url);
+            } else {
+              console.warn(`⚠️ Notaires Bretons (location) - Données incomplètes pour ${url}`);
+              await insertErreur("Notaires et Bretons (location)", url, "Données incomplètes (ville ou loyer manquant)");
+            }
+          } catch (err) {
+            console.error(`❌ Notaires Bretons (location) - Erreur sur ${url}:`, err.message);
+            await insertErreur("Notaires et Bretons (location)", url, String(err));
           }
-        } catch (err) {
-          console.error(`❌ Notaires Bretons (location) - Erreur sur ${url}:`, err.message);
-          await insertErreur("Notaires et Bretons (location)", url, String(err));
         }
-      }
 
-      currentUrl = nextUrl;
+        currentUrl = nextUrl;
+      }
     }
   }
 

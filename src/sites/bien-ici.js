@@ -27,7 +27,9 @@ async function fetchPage(from, zoneIds, size = 100) {
 }
 
 function parseAd(ad) {
-  const type = ad.propertyType === "building" ? "immeuble" : "maison";
+  // "flat" n'existe que côté location (filterType "rent") : la vente ne demande jamais que
+  // house/building, donc ce cas ne change rien pour bienIciScraper.
+  const type = ad.propertyType === "building" ? "Immeuble" : ad.propertyType === "flat" ? "Appartement" : "Maison";
   // Programmes neufs à plusieurs lots : ad.price peut être un tableau [min, max] au lieu
   // d'un nombre — sans ça, pg sérialise le tableau JS en littéral Postgres "{123,NULL}"
   // et corrompt la colonne (constaté en base : prix = '{"328515",NULL}').
@@ -50,7 +52,7 @@ async function fetchLocationPage(from, zoneIds, size = 100) {
   const filters = {
     size, from,
     filterType: "rent",
-    propertyType: ["flat"],
+    propertyType: ["flat", "house"],
     newProperty: false,
     zoneIdsByTypes: { zoneIds },
     sortBy: "publicationDate",
@@ -219,7 +221,7 @@ export const bienIciLocationScraper = async () => {
           if (data.ville && data.prix) {
             empreintesVues.add(empreinte);
             await insertAnnonceLocation({
-              type: "Appartement",
+              type: data.type,
               loyer: data.prix,
               ville: data.ville,
               pieces: data.pieces,

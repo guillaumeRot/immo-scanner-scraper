@@ -9,10 +9,12 @@ const BASE_LIST_URL =
   `&C_30_search=COMPRIS&C_30_type=NUMBER&C_30_MAX=400000` +
   `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
 
+// C_27 en TEXT (pas UNIQUE) accepte plusieurs valeurs séparées par une virgule, comme pour
+// la vente ci-dessus : 1=Appartement, 2=Maison en une seule requête combinée.
 const BASE_LIST_URL_LOCATION =
   `${BASE_URL}/catalog/advanced_search_result.php?action=update_search` +
   `&C_28_search=EGAL&C_28_type=UNIQUE&C_28=Location` +
-  `&C_27_search=EGAL&C_27_type=TEXT&C_27=1` +
+  `&C_27_search=EGAL&C_27_type=TEXT&C_27=1%2C2` +
   `&C_65_search=CONTIENT&C_65_type=TEXT&C_65=`;
 
 const HEADERS = {
@@ -163,7 +165,9 @@ async function scrapeLocationDetailPage(url) {
     if (href.startsWith("http") && !photos.includes(href)) photos.push(href);
   });
 
-  return { loyer, ville, type: "Appartement", surface, pieces, dpe, ges, description, photos };
+  const type = getCritere("Type de bien") || "Appartement";
+
+  return { loyer, ville, type, surface, pieces, dpe, ges, description, photos };
 }
 
 export const boyerLocationScraper = async () => {

@@ -99,7 +99,7 @@ export const bretilimmoLocationScraper = async () => {
   const locParams = villeRows.map(r => `localisation%5B%5D=${r.params.slug}`).join("&");
   const validCitySlugs = villeRows.map((r) => r.params.slug);
   const LIST_URL =
-    `https://bretilimmo.com/location?sort=&type_bien%5B%5D=appartement` +
+    `https://bretilimmo.com/location?sort=&type_bien%5B%5D=appartement&type_bien%5B%5D=maison-villa` +
     `&${locParams}&pieces=&chambres=&minBudget=&maxBudget=&minSurface=&maxSurface=&minTerrain=&maxTerrain=&reference=&submit=`;
 
   const liensActuels = [];
@@ -107,8 +107,9 @@ export const bretilimmoLocationScraper = async () => {
 
   while (currentUrl) {
     console.log(`🔎 Bretil'Immo (location) - Page de liste : ${currentUrl}`);
-    // Pas de plafond de budget pertinent pour un loyer ; on ne garde que le type "appartement"
-    const { links, nextUrl } = await scrapeListPage(currentUrl, ["appartement"], Infinity, validCitySlugs);
+    // Pas de plafond de budget pertinent pour un loyer ; type_bien n'étant pas respecté
+    // côté serveur (cf. commentaire sur scrapeListPage), le filtre réel se fait ici.
+    const { links, nextUrl } = await scrapeListPage(currentUrl, ["appartement", "maison"], Infinity, validCitySlugs);
     console.log(`📌 Bretil'Immo (location) - ${links.length} annonces trouvées.`);
 
     for (const url of links) {
@@ -118,7 +119,7 @@ export const bretilimmoLocationScraper = async () => {
 
         if (data.ville && data.prix) {
           await insertAnnonceLocation({
-            type: "Appartement",
+            type: data.type,
             loyer: data.prix,
             ville: data.ville,
             pieces: data.pieces,
