@@ -11,6 +11,7 @@ import {
   getMaxAnnonceId,
   getAnnoncesCorrespondantes,
   mettreAJourCurseurRecherche,
+  avecRafraichissementComplet,
 } from './db.js';
 import { sendRechercheAlerteEmail, sendErrorReportEmail } from './email.js';
 import { immonotScraper } from './sites/immonot.js';
@@ -112,6 +113,41 @@ app.get('/', (req, res) => {
   res.json({ status: 'ok', message: 'Scraper API en ligne 🚀' });
 });
 
+// Lance un scraper en arrière-plan et répond tout de suite (202). Partagé entre
+// /run-scrapers (runs horaires, fiches déjà vues sautées) et /refresh-prix (1 fois par jour,
+// toutes les fiches rechargées pour capter les changements de prix).
+function lancerScraperAsync(scraper, res, { rafraichir = false } = {}) {
+  const { fn, displayName } = SCRAPERS[scraper];
+  const startTime = Date.now();
+
+  // Exécution asynchrone : on répond tout de suite à cron-job.org (qui a un plafond
+  // de 30s, plus strict que les 60s de maxDuration Vercel) et le scraping continue en
+  // arrière-plan. waitUntil() maintient la fonction serverless vivante jusqu'à la fin
+  // du scraping (borné par maxDuration) même après l'envoi de la réponse HTTP. La
+  // détection d'échec ne passe plus par le code HTTP de cet appel (déjà envoyé avant
+  // la fin du scraping) mais par /send-error-report, qui lit la table Erreur.
+  const runInBackground = (async () => {
+    try {
+      await (rafraichir ? avecRafraichissementComplet(fn) : fn());
+      await updateScanTable(displayName, startTime);
+    } catch (err) {
+      console.error(`❌ Erreur (async) scraper ${displayName}:`, err);
+      try {
+        await insertErreur(displayName, "RUN", String(err));
+      } catch (_) {
+        // rien à faire de plus si même l'enregistrement de l'erreur échoue
+      }
+    }
+  })();
+
+  if (process.env.VERCEL) {
+    waitUntil(runInBackground);
+  }
+
+  const mode = rafraichir ? "rafraîchissement des prix" : "traitement asynchrone";
+  res.status(202).json({ status: "started", message: `Scraper ${scraper} démarré (${mode}).` });
+}
+
 app.get('/run-scrapers', async (req, res) => {
   if (!checkAuth(req, res)) return;
 
@@ -127,34 +163,7 @@ app.get('/run-scrapers', async (req, res) => {
     }
 
     if (scraper) {
-      const { fn, displayName } = SCRAPERS[scraper];
-      const startTime = Date.now();
-
-      // Exécution asynchrone : on répond tout de suite à cron-job.org (qui a un plafond
-      // de 30s, plus strict que les 60s de maxDuration Vercel) et le scraping continue en
-      // arrière-plan. waitUntil() maintient la fonction serverless vivante jusqu'à la fin
-      // du scraping (borné par maxDuration) même après l'envoi de la réponse HTTP. La
-      // détection d'échec ne passe plus par le code HTTP de cet appel (déjà envoyé avant
-      // la fin du scraping) mais par /send-error-report, qui lit la table Erreur.
-      const runInBackground = (async () => {
-        try {
-          await fn();
-          await updateScanTable(displayName, startTime);
-        } catch (err) {
-          console.error(`❌ Erreur (async) scraper ${displayName}:`, err);
-          try {
-            await insertErreur(displayName, "RUN", String(err));
-          } catch (_) {
-            // rien à faire de plus si même l'enregistrement de l'erreur échoue
-          }
-        }
-      })();
-
-      if (process.env.VERCEL) {
-        waitUntil(runInBackground);
-      }
-
-      res.status(202).json({ status: "started", message: `Scraper ${scraper} démarré (traitement asynchrone).` });
+      lancerScraperAsync(scraper, res);
       return;
     }
 
@@ -212,6 +221,80 @@ async function traiterNotificationsRecherches(typeTransaction) {
 
   return { recherches: recherches.length, recherchesNotifiees, annoncesEnvoyees };
 }
+
+// Scrapers dont les données viennent directement de la liste (pas de fiche détail, donc pas
+// de cache LienVu) : déjà à jour à chaque run horaire, inutile de les rafraîchir.
+const SANS_RAFRAICHISSEMENT = new Set(["bien-ici", "bien-ici-location", "immobilier-notaires"]);
+
+// Déclenché 1 fois par jour par une seule tâche cron-job.org (cf. DEPLOY.md) : relance les
+// scrapers en ignorant le cache LienVu, pour mettre à jour prix, description et photos des
+// annonces déjà connues. Les runs horaires (/run-scrapers) ne rechargent, eux, que les
+// nouvelles fiches.
+// - avec ?scraper=<nom> : rafraîchit ce scraper (en arrière-plan, comme /run-scrapers) ;
+// - sans paramètre : se rappelle lui-même une fois par scraper. Un rafraîchissement complet
+//   de tous les scrapers dépasse largement les 60s de maxDuration : chaque scraper tourne
+//   donc dans sa propre invocation Vercel, avec sa propre limite de durée.
+app.get('/refresh-prix', async (req, res) => {
+  if (!checkAuth(req, res)) return;
+
+  const { scraper } = req.query;
+
+  if (!scraper) {
+    const noms = Object.keys(SCRAPERS).filter((nom) => !SANS_RAFRAICHISSEMENT.has(nom));
+    // Derrière le proxy Vercel, req.protocol vaut "http" : forcer https en production.
+    const baseUrl = `${process.env.VERCEL ? "https" : req.protocol}://${req.get("host")}`;
+    const headers = process.env.CRON_SECRET ? { "x-cron-secret": process.env.CRON_SECRET } : {};
+    console.log(`📩 [Handler] Rafraîchissement des prix : lancement de ${noms.length} scrapers`);
+
+    // Chaque appel enfant répond 202 dès son scraper démarré : on n'attend que cette réponse,
+    // pas la fin du scraping. Les échecs de lancement sont enregistrés dans Erreur
+    // (remontés par /send-error-report).
+    const dispatch = (async () => {
+      const resultats = await Promise.allSettled(
+        noms.map(async (nom) => {
+          const r = await fetch(`${baseUrl}/refresh-prix?scraper=${encodeURIComponent(nom)}`, {
+            headers,
+            signal: AbortSignal.timeout(25000),
+          });
+          if (!r.ok) throw new Error(`HTTP ${r.status}`);
+        })
+      );
+      const echecs = resultats
+        .map((r, i) => ({ r, nom: noms[i] }))
+        .filter(({ r }) => r.status === "rejected");
+      if (echecs.length > 0) {
+        await initDb();
+        for (const { r, nom } of echecs) {
+          console.error(`❌ Rafraîchissement ${nom} non lancé:`, r.reason);
+          await insertErreur(SCRAPERS[nom].displayName, "REFRESH", `Lancement du rafraîchissement échoué : ${r.reason}`);
+        }
+      }
+      console.log(`✅ Rafraîchissement des prix : ${noms.length - echecs.length}/${noms.length} scrapers lancés`);
+    })();
+
+    if (process.env.VERCEL) {
+      waitUntil(dispatch);
+    }
+
+    res.status(202).json({ status: "started", message: `Rafraîchissement des prix lancé pour ${noms.length} scrapers.` });
+    return;
+  }
+
+  console.log(`📩 [Handler] Rafraîchissement des prix demandé pour ${scraper}`);
+
+  if (!SCRAPERS[scraper]) {
+    res.status(400).json({ status: "error", message: `Scraper inconnu: ${scraper}` });
+    return;
+  }
+
+  try {
+    await initDb();
+    lancerScraperAsync(scraper, res, { rafraichir: true });
+  } catch (e) {
+    console.error("❌ Erreur dans /refresh-prix:", e);
+    res.status(500).json({ status: "error", message: e.message });
+  }
+});
 
 app.get('/send-notifications-ventes', async (req, res) => {
   if (!checkAuth(req, res)) return;

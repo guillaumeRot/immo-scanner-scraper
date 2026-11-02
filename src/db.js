@@ -1,4 +1,5 @@
 import pg from 'pg';
+import { AsyncLocalStorage } from 'node:async_hooks';
 
 const { Pool } = pg;
 
@@ -653,9 +654,23 @@ function extractHouseRooms(description) {
   return null; // inconnu
 }
 
-// Durée pendant laquelle une fiche déjà scrapée n'est plus rechargée : au-delà, elle est
-// re-scrapée une fois pour rafraîchir prix/description/photos (baisse de prix, etc.).
-const LIEN_VU_TTL_HOURS = 24;
+// Les changements de prix sont normalement captés par /refresh-prix (1 fois par jour), qui
+// ignore ce cache. Ce TTL n'est qu'un filet de sécurité si cette tâche cron est oubliée ou
+// désactivée : au-delà, la fiche est re-scrapée même par un run horaire.
+const LIEN_VU_TTL_HOURS = 7 * 24;
+
+// Mode "rafraîchissement complet" (/refresh-prix) : propagé via AsyncLocalStorage plutôt
+// qu'en paramètre de chaque scraper, et isolé par appel (deux requêtes concurrentes sur une
+// même instance Vercel chaude ne se contaminent pas).
+const refreshStorage = new AsyncLocalStorage();
+
+/**
+ * Exécute fn en ignorant le cache LienVu : toutes les fiches détail sont rechargées
+ * (prix, description, photos mis à jour), puis re-marquées comme vues.
+ */
+export function avecRafraichissementComplet(fn) {
+  return refreshStorage.run(true, fn);
+}
 
 /**
  * Parmi les liens d'une page liste, renvoie ceux dont la fiche détail a déjà été scrapée
@@ -666,7 +681,7 @@ const LIEN_VU_TTL_HOURS = 24;
  */
 export async function getLiensDejaVus(liens) {
   if (!pool) throw new Error("Pool non initialisé");
-  if (liens.length === 0) return new Set();
+  if (liens.length === 0 || refreshStorage.getStore()) return new Set();
   const res = await pool.query(
     `SELECT lien FROM "LienVu" WHERE lien = ANY($1) AND date_vu > NOW() - ($2 || ' hours')::interval`,
     [liens, LIEN_VU_TTL_HOURS]
@@ -1171,7 +1186,7 @@ export async function purgeOldErreurs(joursRetention = 30) {
   }
   // Les entrées LienVu périmées (> TTL) ne servent plus : elles seraient re-scrapées de toute
   // façon. On garde une marge pour ne pas grossir la table indéfiniment.
-  await pool.query(`DELETE FROM "LienVu" WHERE date_vu < NOW() - INTERVAL '7 days'`);
+  await pool.query(`DELETE FROM "LienVu" WHERE date_vu < NOW() - INTERVAL '30 days'`);
   return res.rowCount;
 }
 

@@ -127,6 +127,31 @@ https://ton-projet.vercel.app/run-scrapers?scraper=kermarrec&secret=e0509eed16a4
 (remplacer par ton vrai domaine Vercel et ton vrai `CRON_SECRET`, ne pas réutiliser
 l'exemple ci-dessus tel quel)
 
+### Rafraîchissement quotidien des prix
+
+Pour économiser le CPU Vercel (plan Hobby : 4h/mois), les runs `/run-scrapers` ne
+rechargent que les **nouvelles** fiches détail : celles déjà scrapées (table `LienVu`) sont
+conservées telles quelles. Les changements de prix, de description ou de photos des annonces
+déjà connues sont captés par un second endpoint qui ignore ce cache :
+
+- **Une seule tâche cron-job.org** :
+  `https://<ton-domaine-vercel>.vercel.app/refresh-prix?secret=<CRON_SECRET>`
+- **Planification** : **1 fois par jour**, en dehors des créneaux de `/run-scrapers`
+  (ex. 3h du matin).
+
+Sans paramètre, l'endpoint se rappelle lui-même une fois par scraper
+(`/refresh-prix?scraper=<nom>`) : chaque scraper tourne dans sa propre invocation Vercel,
+donc avec sa propre limite de 60s (tout enchaîner dans un seul appel la dépasserait). Un
+lancement qui échoue est enregistré dans `Erreur` (remonté par `/send-error-report`).
+`/refresh-prix?scraper=<nom>` reste utilisable à la main pour rafraîchir un seul scraper.
+
+`bien-ici`, `bien-ici-location` et `immobilier-notaires` sont exclus du rafraîchissement :
+leurs données viennent directement de la liste (pas de fiche détail), elles sont donc mises
+à jour à chaque run.
+
+Filet de sécurité : si une tâche `/refresh-prix` est oubliée ou désactivée, une fiche est
+de toute façon re-scrapée par un run horaire au bout de 7 jours.
+
 ## 2bis. Notifications par email des nouvelles annonces
 
 Ventes et locations sont notifiées par **deux tâches cron-job.org séparées** (indépendantes
