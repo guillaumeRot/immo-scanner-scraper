@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://myhomeimmobilier.fr";
 const HEADERS = {
@@ -104,7 +104,10 @@ export const myHomeImmobilierScraper = async () => {
       }
       console.log(`📌 My Home Immobilier - ${links.length} annonces trouvées pour ${row.nom} (${label}).`);
 
+      // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+      const dejaScrapes = await getLiensDejaVus(links);
       for (const url of links) {
+        if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
         try {
           const data = await scrapeDetailPage(url);
           if (data.prix) {

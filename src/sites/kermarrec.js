@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.kermarrec-habitation.fr";
 
@@ -148,7 +148,10 @@ export const kermarrecLocationScraper = async () => {
       const { links, nextUrl } = await scrapeListPage(currentUrl);
       console.log(`📌 Kermarrec (location) - ${links.length} annonces trouvées (${typeSlug}).`);
 
+      // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+      const dejaScrapes = await getLiensDejaVus(links);
       for (const url of links) {
+        if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
         try {
           console.log(`📄 Kermarrec (location) - Page détail : ${url}`);
           const data = await scrapeLocationDetailPage(url);
@@ -207,7 +210,10 @@ export const kermarrecScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl);
     console.log(`📌 Kermarrec - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Kermarrec - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

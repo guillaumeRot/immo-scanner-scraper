@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus, marquerLienVu } from "../db.js";
 
 const BASE_URL = "https://www.immonot.com";
 const HEADERS = {
@@ -104,13 +104,18 @@ export const immonotScraper = async () => {
       const { links, nextUrl } = await scrapeListPage(currentUrl);
       console.log(`📌 Immonot - ${links.length} annonces sur ${currentUrl}`);
 
+      // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+      const dejaScrapes = await getLiensDejaVus(links);
       for (const url of links) {
+        if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
         try {
           const data = await scrapeDetailPage(url);
           if (data.ville && data.prix && data.prix <= 400000) {
             await insertAnnonce({ ...data, agence: "Immonot", lien: url });
             liensActuels.push(url);
-          } else if (!data.ville || !data.prix) {
+          } else if (data.ville && data.prix) {
+            await marquerLienVu(url); // hors budget : inutile de la recharger à chaque run
+          } else {
             console.warn(`⚠️ Immonot - Données incomplètes pour ${url}`);
             await insertErreur("Immonot", url, "Données incomplètes (ville ou prix manquant)");
           }

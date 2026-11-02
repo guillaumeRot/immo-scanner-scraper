@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus, marquerLienVu } from "../db.js";
 
 // iad France : premier réseau de mandataires immobiliers indépendants — un site unique
 // (pas un site par mandataire) avec un vrai catalogue national.
@@ -79,13 +79,17 @@ export const iadFranceScraper = async () => {
       }
       console.log(`📌 iad France - ${row.nom} (${type}) : ${links.length} annonces trouvées.`);
 
+      // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+      const dejaScrapes = await getLiensDejaVus(links);
       for (const url of links) {
+        if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
         if (liensVus.has(url)) continue;
         liensVus.add(url);
         try {
           const data = await scrapeDetailPage(url);
           if (data.horsMarche) {
             horsMarcheIgnorees++;
+            await marquerLienVu(url);
             continue;
           }
           if (data.ville && data.prix && data.type) {

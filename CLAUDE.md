@@ -54,7 +54,10 @@ export const xyzScraper = async () => {
 
   while (currentUrl) {
     const { links, nextUrl } = await scrapeListPage(currentUrl);
+    // Fiches déjà scrapées < 24h (table LienVu) : on les garde sans les recharger (CPU Vercel)
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         const data = await scrapeDetailPage(url);
         if (data.ville && data.prix) {

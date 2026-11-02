@@ -171,6 +171,18 @@ async function ensureTablesExists() {
   await pool.query(createVillesTableQuery);
   console.log("✅ Tables 'Villes' et 'VilleScraperParams' vérifiées/créées");
 
+  // Cache des fiches détail déjà scrapées (vente + location, toutes agences) : permet aux
+  // scrapers de ne recharger/parser que les nouvelles fiches au lieu de toutes à chaque run
+  // (le parsing cheerio des fiches était l'essentiel du CPU consommé sur Vercel). Contient
+  // aussi les fiches ignorées par insertAnnonce (ville/type non supporté), qui n'ont pas de
+  // ligne dans Annonce mais étaient elles aussi rechargées à chaque passage.
+  await pool.query(`
+    CREATE TABLE IF NOT EXISTS "LienVu" (
+      lien VARCHAR PRIMARY KEY,
+      date_vu TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+    );
+  `);
+
   await seedVilles();
 }
 
@@ -641,6 +653,45 @@ function extractHouseRooms(description) {
   return null; // inconnu
 }
 
+// Durée pendant laquelle une fiche déjà scrapée n'est plus rechargée : au-delà, elle est
+// re-scrapée une fois pour rafraîchir prix/description/photos (baisse de prix, etc.).
+const LIEN_VU_TTL_HOURS = 24;
+
+/**
+ * Parmi les liens d'une page liste, renvoie ceux dont la fiche détail a déjà été scrapée
+ * récemment (et qu'on peut donc sauter). Les scrapers doivent quand même les pousser dans
+ * liensActuels pour que deleteMissingAnnonces ne les supprime pas.
+ * @param {string[]} liens
+ * @returns {Promise<Set<string>>}
+ */
+export async function getLiensDejaVus(liens) {
+  if (!pool) throw new Error("Pool non initialisé");
+  if (liens.length === 0) return new Set();
+  const res = await pool.query(
+    `SELECT lien FROM "LienVu" WHERE lien = ANY($1) AND date_vu > NOW() - ($2 || ' hours')::interval`,
+    [liens, LIEN_VU_TTL_HOURS]
+  );
+  return new Set(res.rows.map((r) => r.lien));
+}
+
+/**
+ * Mémorise qu'une fiche détail a été scrapée. Appelé par insertAnnonce(Location) ; à appeler
+ * aussi directement par un scraper qui écarte une fiche sans l'insérer (prix hors budget,
+ * bien hors marché…) pour ne pas la recharger à chaque passage.
+ * @param {string} lien
+ */
+export async function marquerLienVu(lien) {
+  try {
+    await pool.query(
+      `INSERT INTO "LienVu" (lien, date_vu) VALUES ($1, NOW())
+       ON CONFLICT (lien) DO UPDATE SET date_vu = NOW()`,
+      [lien]
+    );
+  } catch (err) {
+    console.error("Erreur marquage lien vu (pg):", err);
+  }
+}
+
 export async function insertAnnonce(annonce) {
   if (!pool) throw new Error("Pool non initialisé");
   if (!annonce.lien) {
@@ -668,6 +719,7 @@ export async function insertAnnonce(annonce) {
   const villesSupportees = Object.values(VILLES).map(v => v.nom);
   if (annonce.ville && !villesSupportees.includes(annonce.ville)) {
     console.log(`Annonce ignorée - ville non supportée: ${annonce.ville}`);
+    await marquerLienVu(annonce.lien);
     return;
   }
 
@@ -675,6 +727,7 @@ export async function insertAnnonce(annonce) {
   const typesSupportes = Object.values(TYPES).map(t => t.nom);
   if (annonce.type && !typesSupportes.includes(annonce.type)) {
     console.log(`Annonce ignorée - type non supporté: ${annonce.type}`);
+    await marquerLienVu(annonce.lien);
     return;
   }
 
@@ -756,6 +809,7 @@ export async function insertAnnonce(annonce) {
     ];
 
     await pool.query(upsertQuery, values);
+    await marquerLienVu(annonce.lien);
   } catch (err) {
     console.error("Erreur insertion annonce (pg):", err);
   }
@@ -775,6 +829,7 @@ export async function insertAnnonceLocation(annonce) {
   const villesSupportees = Object.values(VILLES).map(v => v.nom);
   if (annonce.ville && !villesSupportees.includes(annonce.ville)) {
     console.log(`Annonce location ignorée - ville non supportée: ${annonce.ville}`);
+    await marquerLienVu(annonce.lien);
     return;
   }
 
@@ -826,6 +881,7 @@ export async function insertAnnonceLocation(annonce) {
     ];
 
     await pool.query(upsertQuery, values);
+    await marquerLienVu(annonce.lien);
   } catch (err) {
     console.error("Erreur insertion annonce location (pg):", err);
   }
@@ -838,9 +894,23 @@ export async function deleteMissingAnnoncesLocation(agence, liensActuels) {
     const deleteQuery = `
       DELETE FROM "AnnonceLocation"
       WHERE agence = $1 AND lien NOT IN (${liensActuels.map((_, i) => `$${i + 2}`).join(", ")})
+      RETURNING lien
     `;
     const values = [agence, ...liensActuels];
-    await pool.query(deleteQuery, values);
+    const res = await pool.query(deleteQuery, values);
+
+    // Une annonce retirée puis republiée sous le même lien doit être re-scrapée
+    // (et non sautée comme "déjà vue") pour être réinsérée.
+    if (res.rows.length > 0) {
+      await pool.query(`DELETE FROM "LienVu" WHERE lien = ANY($1)`, [res.rows.map((r) => r.lien)]);
+    }
+
+    // Les fiches sautées car déjà vues ne passent pas par l'upsert : on rafraîchit leur
+    // date_scraped pour qu'elles restent comptées dans annonces_count (updateScanTable).
+    await pool.query(
+      `UPDATE "AnnonceLocation" SET date_scraped = NOW() WHERE agence = $1 AND lien = ANY($2)`,
+      [agence, liensActuels]
+    );
   } catch (err) {
     console.error("Erreur suppression annonces location (pg):", err);
   }
@@ -886,9 +956,23 @@ export async function deleteMissingAnnonces(agence, liensActuels) {
     const deleteQuery = `
       DELETE FROM "Annonce"
       WHERE agence = $1 AND lien NOT IN (${liensActuels.map((_, i) => `$${i + 2}`).join(", ")})
+      RETURNING lien
     `;
     const values = [agence, ...liensActuels];
-    await pool.query(deleteQuery, values);
+    const res = await pool.query(deleteQuery, values);
+
+    // Une annonce retirée puis republiée sous le même lien doit être re-scrapée
+    // (et non sautée comme "déjà vue") pour être réinsérée.
+    if (res.rows.length > 0) {
+      await pool.query(`DELETE FROM "LienVu" WHERE lien = ANY($1)`, [res.rows.map((r) => r.lien)]);
+    }
+
+    // Les fiches sautées car déjà vues ne passent pas par l'upsert : on rafraîchit leur
+    // date_scraped pour qu'elles restent comptées dans annonces_count (updateScanTable).
+    await pool.query(
+      `UPDATE "Annonce" SET date_scraped = NOW() WHERE agence = $1 AND lien = ANY($2)`,
+      [agence, liensActuels]
+    );
   } catch (err) {
     console.error("Erreur suppression annonces (pg):", err);
   }
@@ -1085,6 +1169,9 @@ export async function purgeOldErreurs(joursRetention = 30) {
   if (res.rowCount > 0) {
     console.log(`🧹 ${res.rowCount} erreur(s) de plus de ${joursRetention} jours supprimée(s).`);
   }
+  // Les entrées LienVu périmées (> TTL) ne servent plus : elles seraient re-scrapées de toute
+  // façon. On garde une marge pour ne pas grossir la table indéfiniment.
+  await pool.query(`DELETE FROM "LienVu" WHERE date_vu < NOW() - INTERVAL '7 days'`);
   return res.rowCount;
 }
 

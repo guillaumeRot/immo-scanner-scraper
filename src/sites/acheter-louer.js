@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.acheter-louer.fr";
 
@@ -137,7 +137,10 @@ export const acheterLouerLocationScraper = async () => {
       const links = await scrapeLocationListPage(LIST_URL, [row.params.loc]);
       console.log(`📌 Acheter-louer (location) - ${links.length} annonces trouvées (${categorieSlug}).`);
 
+      // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+      const dejaScrapes = await getLiensDejaVus(links);
       for (const url of links) {
+        if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
         try {
           console.log(`📄 Acheter-louer (location) - Page détail : ${url}`);
           const data = await scrapeDetailPage(url);
@@ -191,7 +194,10 @@ export const acheterLouerScraper = async () => {
   const links = await scrapeListPage(LIST_URL, villeRows.map((r) => r.params.loc));
   console.log(`📌 Acheter-louer - ${links.length} annonces trouvées.`);
 
+  // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+  const dejaScrapes = await getLiensDejaVus(links);
   for (const url of links) {
+    if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
     try {
       console.log(`📄 Acheter-louer - Page détail : ${url}`);
       const data = await scrapeDetailPage(url);

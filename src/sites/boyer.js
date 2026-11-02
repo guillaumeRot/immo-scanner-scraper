@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.boyer-immobilier.fr";
 const BASE_LIST_URL =
@@ -207,7 +207,10 @@ export const boyerLocationScraper = async () => {
       }
       console.log(`📌 Boyer (location) - ${links.length} annonces trouvées.`);
 
+      // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+      const dejaScrapes = await getLiensDejaVus(links);
       for (const url of links) {
+        if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
         if (Date.now() - scraperStart > BUDGET_MS) {
           console.warn(`⚠️ Boyer (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
           await insertErreur("Boyer Immobilier (location)", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);
@@ -290,7 +293,10 @@ export const boyerScraper = async () => {
     }
     console.log(`📌 Boyer - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       if (Date.now() - scraperStart > BUDGET_MS) {
         console.warn(`⚠️ Boyer - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
         await insertErreur("Boyer Immobilier", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);

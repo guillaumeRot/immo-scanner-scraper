@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus, marquerLienVu } from "../db.js";
 
 // Agence "Alternative Immobilier", franchisée du réseau national ArthurImmo.com —
 // sous-domaine propre à cette agence (Châteaubourg).
@@ -91,13 +91,17 @@ export const alternativeImmobilierScraper = async () => {
     }
     console.log(`📌 Alternative Immobilier - ${row.nom} : ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       if (liensVus.has(url)) continue; // chevauchement possible entre secteurs voisins
       liensVus.add(url);
       try {
         const data = await scrapeDetailPage(url);
         if (data.horsMarche) {
           horsMarcheIgnorees++;
+          await marquerLienVu(url);
           continue;
         }
         if (data.ville && data.prix && data.type) {

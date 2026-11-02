@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.la-francaise-immobiliere.fr";
 const AJAX_URL = `${BASE_URL}/wp-admin/admin-ajax.php`;
@@ -96,7 +96,10 @@ export const laFrancaiseImmobiliereScraper = async () => {
     }
     console.log(`📌 La Française Immobilière - ${row.nom} : ${cards.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(cards.map((c) => c.lien));
     for (const card of cards) {
+      if (dejaScrapes.has(card.lien)) { liensActuels.push(card.lien); continue; }
       try {
         if (!card.prix) {
           console.warn(`⚠️ La Française Immobilière - Données incomplètes pour ${card.lien}`);

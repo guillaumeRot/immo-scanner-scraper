@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.blot-immobilier.fr";
 const AJAX_URL = `${BASE_URL}/wp-admin/admin-ajax.php`;
@@ -184,7 +184,10 @@ export const blotScraper = async () => {
 
     const links = await fetchLinksForIds(ids, transaction);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Blot - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);
@@ -239,7 +242,10 @@ export const blotLocationScraper = async () => {
 
     const links = await fetchLinksForIds(ids, transaction);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Blot (location) - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

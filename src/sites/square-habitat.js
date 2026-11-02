@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.squarehabitat.fr";
 const HEADERS = {
@@ -107,7 +107,10 @@ export const squareHabitatScraper = async () => {
     }
     console.log(`📌 Square Habitat - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Square Habitat - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

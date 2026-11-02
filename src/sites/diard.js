@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.diard-immobilier.fr";
 const BASE_LIST_URL =
@@ -225,7 +225,10 @@ export const diardLocationScraper = async () => {
         }
         console.log(`📌 Diard (location) - ${links.length} annonces trouvées (${label}).`);
 
+        // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+        const dejaScrapes = await getLiensDejaVus(links);
         for (const url of links) {
+          if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
           if (Date.now() - scraperStart > BUDGET_MS) {
             console.warn(`⚠️ Diard (location) - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
             await insertErreur("Diard (location)", url, `Budget de temps dépassé (run incomplet) — ${row.nom} (${label})`);
@@ -309,7 +312,10 @@ export const diardScraper = async () => {
     }
     console.log(`📌 Diard - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       if (Date.now() - scraperStart > BUDGET_MS) {
         console.warn(`⚠️ Diard - Budget de temps dépassé, arrêt anticipé (run incomplet)`);
         await insertErreur("Diard", url, `Budget de temps dépassé (run incomplet) — ${row.nom}`);

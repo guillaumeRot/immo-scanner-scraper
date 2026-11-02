@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -112,7 +112,10 @@ export const bretilimmoLocationScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl, ["appartement", "maison"], Infinity, validCitySlugs);
     console.log(`📌 Bretil'Immo (location) - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Bretil'Immo (location) - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);
@@ -167,7 +170,10 @@ export const bretilimmoScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl, ["maison", "immeuble"], 400000, validCitySlugs);
     console.log(`📌 Bretil'Immo - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Bretil'Immo - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

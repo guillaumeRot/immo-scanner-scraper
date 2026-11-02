@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getLiensDejaVus } from "../db.js";
 
 const LIST_URL =
   "https://www.penn-immobilier.com/nos-biens/xdpemrqtp4buydnf99nh9kerfqiayzh3imfyje44jebrsyzmou7q6h3enzade8wot9r54jszgx4f537jrwf9kf5rqbkty9a8jmajdyhn8t4w3m6tqdyctxcdxj8jad1cpogj5htn3hfuuqq1zginiqb6nshgcag1n1obpshr9k8mphp5e3wjzmpgswqdam7ndrscscbef6xiu4z5rpp8anyimf7jpmamm6idfckcb6t66wguh4398s8j3qqutopgtu1d5cz5a9o83889eeahnitqdkwgnhizy3qwsqr6yko7x7auozr8pde1e1fcp7b9s68cupbjum5uwin4oxpnxm464gw8xcdktpkn4apgg6w9m96i6rxgwoy9mg8ocxk8n8exx1ydmf3fd4s84ydiht1cfonw558djn3rh686ygmoumga/1";
@@ -79,7 +79,10 @@ export const pennScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl);
     console.log(`📌 Penn - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Penn - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

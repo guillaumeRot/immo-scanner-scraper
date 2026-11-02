@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const HEADERS = {
   "User-Agent":
@@ -92,7 +92,10 @@ export const centuryScraper = async () => {
     }
   }
 
+  // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+  const dejaScrapes = await getLiensDejaVus(linksToProcess);
   for (const url of linksToProcess) {
+    if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
     try {
       console.log(`📄 Century 21 - Page détail : ${url}`);
       const data = await scrapeDetailPage(url);

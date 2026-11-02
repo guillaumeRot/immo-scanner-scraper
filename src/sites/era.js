@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.eraimmobilier.com";
 
@@ -99,7 +99,10 @@ export const eraLocationScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl);
     console.log(`📌 ERA (location) - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 ERA (location) - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);
@@ -153,7 +156,10 @@ export const eraScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl);
     console.log(`📌 ERA - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 ERA - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

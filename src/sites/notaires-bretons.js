@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, insertAnnonceLocation, deleteMissingAnnoncesLocation, getVilleParams, getLiensDejaVus } from "../db.js";
 
 const BASE_URL = "https://www.notaireetbreton.bzh";
 
@@ -85,7 +85,10 @@ export const notairesBretonsLocationScraper = async () => {
         const { links, nextUrl } = await scrapeListPage(currentUrl);
         console.log(`📌 Notaires Bretons (location) - ${links.length} annonces trouvées (${categorie}).`);
 
+        // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+        const dejaScrapes = await getLiensDejaVus(links);
         for (const url of links) {
+          if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
           try {
             console.log(`📄 Notaires Bretons (location) - Page détail : ${url}`);
             const data = await scrapeDetailPage(url);
@@ -143,7 +146,10 @@ export const notairesBretonsScraper = async () => {
     const { links, nextUrl } = await scrapeListPage(currentUrl);
     console.log(`📌 Notaires Bretons - ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       try {
         console.log(`📄 Notaires Bretons - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);

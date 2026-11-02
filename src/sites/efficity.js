@@ -1,5 +1,5 @@
 import * as cheerio from "cheerio";
-import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams } from "../db.js";
+import { deleteMissingAnnonces, insertAnnonce, insertErreur, getVilleParams, getLiensDejaVus } from "../db.js";
 
 // Efficity : réseau de mandataires indépendants (catalogue national unique, pas un site
 // par consultant).
@@ -85,7 +85,10 @@ export const efficityScraper = async () => {
     }
     console.log(`📌 Efficity - ${row.nom} : ${links.length} annonces trouvées.`);
 
+    // Fiches déjà scrapées récemment : on les garde (liensActuels) sans les recharger
+    const dejaScrapes = await getLiensDejaVus(links);
     for (const url of links) {
+      if (dejaScrapes.has(url)) { liensActuels.push(url); continue; }
       if (liensVus.has(url)) continue; // recherche par rayon : chevauchement entre villes voisines
       liensVus.add(url);
       try {
