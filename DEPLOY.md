@@ -1,5 +1,68 @@
 # Déploiement Vercel + planification automatique
 
+## 0. Planification automatique : GitHub Actions (méthode actuelle)
+
+Le scraping et les notifications tournaient historiquement sur une planification
+cron-job.org → Vercel (sections 2/2bis/2ter ci-dessous). Ça consommait le quota "Fluid
+Active CPU" du plan Vercel Hobby (4h/mois) — ~35 scrapers appelés toutes les heures a fini
+par dépasser ce quota. Le déclenchement planifié normal passe désormais par **GitHub
+Actions** (ce repo est public → minutes illimitées et gratuites), qui exécute directement
+le code en process plutôt que via des requêtes HTTP vers Vercel — plus aucun CPU Vercel
+consommé par le scraping.
+
+Vercel reste déployé et les routes `/run-scrapers`, `/refresh-prix`,
+`/send-notifications-ventes`, `/send-notifications-locations` et `/send-error-report`
+restent pleinement fonctionnelles (protégées par `CRON_SECRET`) comme **filet de secours
+manuel** — rien à réactiver côté code si besoin de les réutiliser.
+
+### Scripts autonomes
+
+- `node scripts/scrape.js` — tous les scrapers, en séquentiel (run incrémental).
+- `node scripts/scrape.js --full` — rafraîchissement complet (ignore le cache `LienVu`,
+  recharge toutes les fiches déjà connues pour capter les changements de prix/description/photos).
+- `node scripts/scrape.js --only=era,kermarrec` — limite à une liste de scrapers (debug).
+- `node scripts/notify.js ventes` / `locations` / `errors` — envoi des notifications/rapport
+  d'erreurs.
+
+Mesure réelle (run incrémental complet, 35 scrapers, en local) : **2min44s**. Un
+rafraîchissement complet est plus long (dépend du nombre total d'annonces déjà connues, pas
+seulement des nouvelles) mais reste largement sous le `timeout-minutes` des workflows.
+
+### Workflows (`.github/workflows/`)
+
+| Fichier | Déclenchement | Action |
+| --- | --- | --- |
+| `scrape-hourly.yml` | `0 * * * *` (toutes les heures) | `node scripts/scrape.js` |
+| `scrape-full-daily.yml` | `0 3 * * *` (1x/jour, 3h UTC) | `node scripts/scrape.js --full` |
+| `notify-ventes.yml` | `15 * * * *` | `node scripts/notify.js ventes` |
+| `notify-locations.yml` | `15 * * * *` | `node scripts/notify.js locations` |
+| `notify-errors.yml` | `20 * * * *` | `node scripts/notify.js errors` |
+
+Les deux workflows de scraping partagent le groupe de concurrence `scrape` (jamais en
+parallèle l'un de l'autre) ; chaque workflow de notification a son propre groupe, pour
+pouvoir le désactiver indépendamment (onglet Actions → sélectionner le workflow → "Disable
+workflow") exactement comme on désactivait une tâche cron-job.org. `workflow_dispatch` est
+activé sur les 5 pour un déclenchement manuel depuis l'onglet Actions de GitHub.
+
+### Secrets GitHub (Settings → Secrets and variables → Actions)
+
+| Secret | Valeur |
+| --- | --- |
+| `DATABASE_URL` | Identique à Vercel/`.env` |
+| `GMAIL_USER` | Identique à Vercel/`.env` |
+| `GMAIL_APP_PASSWORD` | Identique à Vercel/`.env` |
+
+`CRON_SECRET` n'est pas nécessaire ici : les scripts appellent le code directement, pas de
+couche HTTP à protéger.
+
+### Migration depuis cron-job.org
+
+Désactiver (pas forcément supprimer) les tâches cron-job.org qui appellent `/run-scrapers`
+(par scraper), `/refresh-prix`, `/send-notifications-ventes`, `/send-notifications-locations`
+et `/send-error-report` — c'est ça qui arrête la consommation de CPU Vercel. Le reste de ce
+document (sections 2/2bis/2ter) décrit cette ancienne méthode, conservée pour référence/filet
+de secours.
+
 ## Ce qui a changé dans le code
 
 - **3 scrapers désactivés** (Figaro, Logic-immo, Ouest-France) : nécessitent Playwright,
@@ -70,7 +133,10 @@ Utilise la même valeur ici et dans cron-job.org (étape 2).
 Après avoir ajouté les variables, redéployer (`vercel --prod`) pour qu'elles soient prises
 en compte.
 
-## 2. Planifier les scrapers avec cron-job.org
+## 2. Planifier les scrapers avec cron-job.org (ancienne méthode, filet de secours)
+
+⚠️ Cette méthode n'est plus utilisée en temps normal depuis le passage à GitHub Actions
+(section 0) — conservée pour référence et comme filet de secours manuel.
 
 Crée un compte sur [cron-job.org](https://cron-job.org), puis une tâche **par scraper**
 (15 au total). Pour chaque tâche :
