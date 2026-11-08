@@ -88,8 +88,14 @@ export const alcImmobilierScraper = async () => {
       try {
         links = await scrapeListPage(listUrl);
       } catch (err) {
-        console.error(`❌ ALC Immobilier - Erreur sur la page de liste ${listUrl}:`, err.message);
-        await insertErreur("ALC Immobilier", listUrl, String(err));
+        // 403 intermittent connu sur certaines villes depuis les runners GitHub Actions
+        // (IP datacenter) : on logue sans remonter dans le rapport d'erreurs par mail.
+        if (/HTTP 403/.test(err.message)) {
+          console.warn(`⚠️ ALC Immobilier - 403 (bloqué) sur ${listUrl}, ignoré.`);
+        } else {
+          console.error(`❌ ALC Immobilier - Erreur sur la page de liste ${listUrl}:`, err.message);
+          await insertErreur("ALC Immobilier", listUrl, String(err));
+        }
         continue;
       }
       console.log(`📌 ALC Immobilier - ${links.length} annonces trouvées pour ${row.nom}.`);

@@ -32,6 +32,11 @@ async function scrapeDetailPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
+  // Annonce déjà vendue : la page reste en ligne (200) mais affiche "Plus disponible"
+  // à la place du prix, avec une photo tirée de tmp/photoVendu/. Pas une erreur de scraping.
+  const vendu = /\/tmp\/photoVendu\//i.test(html) || /Plus disponible/i.test(html);
+  if (vendu) return { vendu: true };
+
   // Le dernier élément du fil d'Ariane donne la ville et le type de bien de façon fiable
   // (le titre affiché mêle parfois des adjectifs marketing avant le nom de la ville).
   const breadcrumbText = $(".breadcrumb_container li").last().text().trim();
@@ -100,6 +105,10 @@ export const nestennScraper = async () => {
       liensVus.add(url);
       try {
         const data = await scrapeDetailPage(url);
+        if (data.vendu) {
+          console.log(`ℹ️ Nestenn - ${url} déjà vendu, ignoré.`);
+          continue;
+        }
         if (data.ville && data.prix && data.type) {
           await insertAnnonce({
             type: data.type,
