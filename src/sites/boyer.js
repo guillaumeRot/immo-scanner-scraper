@@ -98,6 +98,12 @@ async function scrapeDetailPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
 
+  // Annonce sous offre ou déjà vendue : le CMS préfixe le h1 ("SOUS OFFRE ..." /
+  // "VENDU PAR L'AGENCE ...") et retire le prix de la page. Pas une erreur de scraping.
+  if (/^(SOUS OFFRE|VENDU)\b/i.test($("h1").first().text().trim())) {
+    return { indisponible: true };
+  }
+
   function getCritere(label) {
     let result = null;
     $(".product-criteres .list-group-item").each((_, el) => {
@@ -133,6 +139,11 @@ async function scrapeDetailPage(url) {
 async function scrapeLocationDetailPage(url) {
   const html = await fetchHtml(url);
   const $ = cheerio.load(html);
+
+  // Annonce sous offre ou déjà louée : même préfixe de h1 que côté vente.
+  if (/^(SOUS OFFRE|VENDU|LOU[ÉE]E?)\b/i.test($("h1").first().text().trim())) {
+    return { indisponible: true };
+  }
 
   function getCritere(label) {
     let result = null;
@@ -221,6 +232,10 @@ export const boyerLocationScraper = async () => {
           console.log(`📄 Boyer (location) - Page détail : ${url}`);
           const data = await scrapeLocationDetailPage(url);
 
+          if (data.indisponible) {
+            console.log(`ℹ️ Boyer (location) - ${url} indisponible (sous offre/loué), ignoré.`);
+            continue;
+          }
           if (data.ville && data.loyer) {
             await insertAnnonceLocation({
               type: data.type,
@@ -307,6 +322,10 @@ export const boyerScraper = async () => {
         console.log(`📄 Boyer - Page détail : ${url}`);
         const data = await scrapeDetailPage(url);
 
+        if (data.indisponible) {
+          console.log(`ℹ️ Boyer - ${url} indisponible (sous offre/vendu), ignoré.`);
+          continue;
+        }
         if (data.ville && data.prix) {
           await insertAnnonce({
             type: data.type,
